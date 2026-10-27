@@ -3,6 +3,8 @@
 App web para celular: busca un suministro por número, muestra su ubicación GPS, dibuja el recorrido en moto
 y arma la ruta del día optimizada.
 
+**App:** https://buscador-suministros.vercel.app/ (también en https://estherguerra570-gif.github.io/buscador-suministros/)
+
 ## Cómo se obtiene el GPS
 El PDF "MODULAR BT + SUMINISTROS AREQUIPA" es un GeoPDF: cada página trae las coordenadas GPS de sus
 4 esquinas. El script lee la posición de cada número dentro de la página y la convierte a lat/lng por
