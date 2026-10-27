@@ -406,7 +406,7 @@ function seleccionar(n) {
   trazarCamino(s);
   if (!propio && s.poste === undefined) {
     cargarZona(claveZona(s.lat, s.lng)).then(() => {
-      if (seleccionActual === s.n && $("#f-poste")) $("#f-poste").textContent = s.poste ?? "—";
+      if (seleccionActual === s.n && $("#f-poste")) $("#f-poste").textContent = s.poste === undefined ? "sin señal" : s.poste ?? "—";
     });
   }
 }
