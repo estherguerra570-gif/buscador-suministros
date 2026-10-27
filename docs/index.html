@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6f43">
+  <title>Buscador de Suministros</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icono-192.png">
+  <link rel="apple-touch-icon" href="icono-192.png">
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="barra">
+    <h1>Suministros <span id="saludo" class="saludo"></span></h1>
+    <button id="btn-menu" class="btn-menu" aria-label="Menú" aria-expanded="false">☰</button>
+  </header>
+
+  <main>
+    <div id="mapa"></div>
+    <button id="btn-ubicacion" class="flotante" title="Mi ubicación" aria-label="Mi ubicación">◎</button>
+
+    <section id="panel" class="panel">
+      <!-- Vista: buscar -->
+      <div class="vista" data-vista="buscar">
+        <form id="form-buscar" class="buscar-fila">
+          <input id="buscador" type="search" inputmode="numeric" enterkeyhint="search" autocomplete="off"
+                 placeholder="Número de suministro…" aria-label="Número de suministro">
+          <button type="submit" class="btn primario">Buscar</button>
+        </form>
+        <div id="ficha" hidden></div>
+        <ul id="resultados" class="lista"></ul>
+        <p id="estado-datos" class="nota"></p>
+      </div>
+
+      <!-- Vista: crear ruta (se abre desde el menú) -->
+      <div class="vista" data-vista="ruta" hidden>
+        <div class="vista-cabecera">
+          <strong>Crear ruta</strong>
+          <button id="btn-cerrar-ruta" class="btn">✕ Volver a buscar</button>
+        </div>
+        <form id="form-agregar-ruta" class="buscar-fila">
+          <input id="numero-ruta" type="search" inputmode="numeric" enterkeyhint="done" autocomplete="off"
+                 placeholder="Número de suministro…" aria-label="Número para agregar a la ruta">
+          <button type="submit" class="btn primario">+ Agregar a la ruta</button>
+        </form>
+        <p id="no-encontrados" class="nota alerta" hidden></p>
+        <details id="cargar-lista">
+          <summary>Pegar varios números a la vez</summary>
+          <textarea id="lista-pegada" rows="4" inputmode="numeric"
+                    placeholder="Pega los números (separados por espacio, coma o salto de línea)"></textarea>
+          <div class="fila">
+            <button id="btn-cargar" class="btn primario">Agregar todos</button>
+          </div>
+        </details>
+
+        <div id="controles-ruta" hidden>
+          <div class="fila">
+            <label class="modo">Partida
+              <select id="partida" class="select-ancho"><option value="gps">Mi ubicación</option></select>
+            </label>
+            <label class="modo">Destino
+              <select id="destino" class="select-ancho"><option value="">El más conveniente</option></select>
+            </label>
+          </div>
+          <p id="resumen-ruta" class="recorrido"></p>
+          <div class="fila">
+            <button id="btn-optimizar" class="btn">↻ Recalcular desde aquí</button>
+            <button id="btn-limpiar" class="btn">Vaciar ruta</button>
+          </div>
+          <div class="leyenda-ruta">
+            <span><i></i>calles del plano</span>
+            <span><i class="osm"></i>calles de OpenStreetMap (fuera del plano)</span>
+            <span><i class="directo"></i>línea recta (sin calle conocida)</span>
+            <span><i class="hecho"></i>ya visitado</span>
+          </div>
+          <button id="btn-navegar" class="btn navegar">Navegar a los próximos pendientes ▸</button>
+          <ol id="lista-ruta" class="lista ruta"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Visor del plano -->
+  <div id="visor" class="visor" hidden>
+    <div class="visor-barra">
+      <span id="visor-titulo"></span>
+      <button id="visor-cerrar" class="btn">Cerrar ✕</button>
+    </div>
+    <div id="visor-mapa"></div>
+  </div>
+
+  <!-- Menú lateral -->
+  <div id="menu-fondo" class="menu-fondo" hidden></div>
+  <aside id="menu" class="menu" hidden aria-label="Menú">
+    <div class="menu-cabecera">
+      <div class="avatar" id="menu-avatar">?</div>
+      <div>
+        <strong id="menu-nombre">Sin nombre</strong>
+        <div class="nota" id="menu-fecha"></div>
+      </div>
+    </div>
+    <button class="menu-item" data-hoja="usuario">👤 Usuario</button>
+    <button class="menu-item" data-hoja="historial">🕘 Búsquedas de hoy <span id="cuenta-historial" class="cuenta"></span></button>
+    <button class="menu-item" data-hoja="agregar">＋ Agregar suministro nuevo</button>
+    <button class="menu-item" data-hoja="mis-puntos">📍 Mis suministros agregados <span id="cuenta-propios" class="cuenta"></span></button>
+    <button class="menu-item" data-hoja="ruta">🛵 Crear ruta <span id="contador-ruta" class="cuenta" hidden></span></button>
+  </aside>
+
+  <!-- Hoja para el contenido de cada opción del menú -->
+  <div id="hoja" class="hoja" hidden>
+    <div class="visor-barra">
+      <span id="hoja-titulo"></span>
+      <button id="hoja-cerrar" class="btn">Cerrar ✕</button>
+    </div>
+    <div id="hoja-cuerpo" class="hoja-cuerpo"></div>
+  </div>
+
+  <!-- Aviso al elegir un punto en el mapa -->
+  <div id="aviso-mapa" class="aviso-mapa" hidden>
+    <span>Toca el mapa donde está el suministro</span>
+    <button id="aviso-cancelar" class="btn">Cancelar</button>
+  </div>
+
+  <script src="lib/leaflet.js"></script>
+  <script src="app.js"></script>
+  <script src="menu.js"></script>
+</body>
+</html>
