@@ -73,20 +73,6 @@ select { width: auto; font-size: 15px; padding: 8px; }
 .buscar-fila { display: flex; gap: 8px; margin: 0; }
 .buscar-fila input { flex: 1; min-width: 0; }
 .buscar-fila .btn { font-size: 16px; padding: 0 18px; }
-.btn-buscar {
-  display: inline-flex; align-items: center; gap: 8px; flex: none;
-  padding: 0 20px; border: 0; border-radius: 12px; cursor: pointer;
-  font: inherit; font-size: 17px; font-weight: 700; letter-spacing: .2px; color: #fff;
-  background: linear-gradient(180deg, #2e9a5c 0%, #1f6f43 100%);
-  box-shadow: 0 3px 0 #164f30, 0 6px 14px rgba(31, 111, 67, .35);
-  transition: transform .08s ease, box-shadow .08s ease, filter .15s ease;
-}
-.btn-buscar:hover { filter: brightness(1.06); }
-.btn-buscar:active { transform: translateY(3px); box-shadow: 0 0 0 #164f30, 0 2px 6px rgba(31, 111, 67, .3); }
-.btn-buscar:focus-visible { outline: 3px solid #9fd7b5; outline-offset: 2px; }
-.btn-buscar.buscando { filter: saturate(.6) brightness(.95); }
-.buscar-fila input:focus { outline: none; border-color: var(--primario); box-shadow: 0 0 0 3px rgba(31, 111, 67, .18); background: #fff; }
-.resultados-titulo { margin: 10px 0 0; font-size: 14px; color: var(--suave); }
 .recorrido { margin: 8px 0 0; font-size: 15px; font-weight: 600; color: #1a73e8; }
 .recorrido.gris { color: var(--suave); font-weight: 400; font-size: 13px; }
 .fila { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }

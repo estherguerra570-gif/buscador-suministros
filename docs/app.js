@@ -348,13 +348,9 @@ function buscar(texto) {
   }
   const lista = [...exactos, ...empiezan, ...contienen];
   if (!lista.length) {
-    ul.innerHTML = `<li><span class="info">No se encontró el suministro “${q}”.</span></li>`;
+    ul.innerHTML = `<li><span class="info">No se encontró “${q}” en las páginas cargadas.</span></li>`;
     return lista;
   }
-  const titulo = document.createElement("p");
-  titulo.className = "resultados-titulo";
-  titulo.textContent = `No hay un suministro exacto “${q}”. Parecidos (${lista.length > 30 ? "primeros 30 de " : ""}${lista.length}):`;
-  ul.appendChild(titulo);
   for (const s of lista.slice(0, 30)) {
     const li = document.createElement("li");
     li.innerHTML = `<span class="punto ${s.c}"></span><span class="num">${s.n}</span>
@@ -365,22 +361,14 @@ function buscar(texto) {
   return lista;
 }
 
-/** Solo al tocar "Buscar": abre el suministro exacto o, si no existe, muestra los parecidos para elegir. */
+/** Botón "Buscar" (o Enter): abre el suministro exacto, o el único parecido. */
 function ejecutarBusqueda() {
   const q = $("#buscador").value.replace(/\D/g, "");
-  if (!datos) return;
-  if (!q) { $("#buscador").focus(); return; }
+  if (!q || !datos) return;
   $("#buscador").blur(); // cierra el teclado del celular
-  const btn = $(".btn-buscar");
-  btn.classList.add("buscando");
-  setTimeout(() => btn.classList.remove("buscando"), 250);
   if (indice.has(q)) return seleccionar(q);
-  // sin coincidencia exacta: se limpia el resultado anterior y se listan los parecidos
-  seleccionActual = null;
-  $("#ficha").hidden = true;
-  capaCamino.clearLayers();
-  if (marcadorSeleccion) { marcadorSeleccion.remove(); marcadorSeleccion = null; }
-  buscar(q);
+  const lista = buscar(q);
+  if (lista.length === 1) seleccionar(lista[0].n);
 }
 
 function seleccionar(n) {
@@ -833,9 +821,20 @@ function activarVista(nombre) {
   if (nombre === "ruta" && ruta.length) encuadrarRuta();
 }
 
-// Escribir no hace nada por sí solo: la búsqueda ocurre únicamente al tocar "Buscar".
+// Mientras se escribe solo se sugieren números; el suministro se abre con "Buscar".
+let espera;
+$("#buscador").addEventListener("input", (e) => {
+  clearTimeout(espera);
+  if (e.target.value.replace(/\D/g, "") !== seleccionActual) {
+    $("#ficha").hidden = true;
+    seleccionActual = null;
+    capaCamino.clearLayers();
+  }
+  espera = setTimeout(() => buscar(e.target.value), 120);
+});
 $("#form-buscar").addEventListener("submit", (e) => {
   e.preventDefault();
+  clearTimeout(espera);
   ejecutarBusqueda();
 });
 
