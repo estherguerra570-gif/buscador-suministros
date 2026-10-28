@@ -19,8 +19,18 @@ Se toman números de 1 a 6 cifras.
 
 ## Ubicaciones corregidas
 Desde el menú (“Corregir ubicación”) se busca un suministro y se marca dónde está realmente (GPS o tocando
-el mapa). Se guarda en el celular y se puede descargar como CSV. Para que una corrección valga para todos,
-se agrega a `docs/data/correcciones.json` con la forma `{"123456": {"lat": -16.39, "lng": -71.53, "nota": ""}}`.
+el mapa). La corrección vale para todos los usuarios:
+- La app la envía a `api/correcciones` (función de Vercel), que la guarda como un commit en
+  `docs/data/correcciones.json`. El historial de commits muestra quién corrigió qué y cuándo.
+- Todos los celulares la leen al abrir la app (y al volver a ella). Sin señal o sin clave queda pendiente
+  en el celular y se envía sola después.
+- En “Ver en el plano” se dibuja la ubicación corregida sobre la hoja del PDF (`geo` de cada página en
+  `indice.json`: transformación lat/lng → posición en la imagen).
+
+Configuración en Vercel (Settings → Environment Variables):
+- `GITHUB_TOKEN`: token *fine-grained* de GitHub con acceso solo a este repositorio y permiso
+  *Contents: Read and write*.
+- `CLAVE_EQUIPO`: clave que cada usuario escribe en menú → Usuario para poder corregir.
 
 ## Rutas
 - Hasta un suministro buscado: en vivo con el GPS. Compiten las calles de OpenStreetMap (OSRM con alternativas)

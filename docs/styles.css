@@ -277,3 +277,12 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
 @media (min-width: 900px) {
   .btn-seguir { bottom: 24px; left: 50%; transform: translateX(-50%); margin-left: -190px; }
 }
+
+/* Aviso flotante y resultado del envío */
+.aviso {
+  position: fixed; left: 12px; right: 12px; top: calc(var(--alto-barra) + env(safe-area-inset-top) + 10px); z-index: 3000;
+  padding: 12px 14px; border-radius: 12px; background: var(--primario); color: #fff; font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0,0,0,.3);
+}
+.aviso.mal { background: #8a4b00; }
+.aviso-envio { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #e3f2e8; color: var(--primario); font-weight: 600; }

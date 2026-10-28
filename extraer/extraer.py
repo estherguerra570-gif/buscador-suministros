@@ -70,6 +70,33 @@ def a_gps(vp, x, y, alto_pagina):
     return lat, lng
 
 
+def geo_a_plano(vp, page):
+    """Transformación afín (lat, lng) -> (px, py) en fracciones de la imagen del plano, ajustada por mínimos
+    cuadrados a las 4 esquinas GPS del viewport. Sirve para dibujar en el plano una ubicación corregida."""
+    bx0, by0, bx1, by1 = vp["bbox"]
+    alto, ancho = page.mediabox.height, page.rect.width
+    filas, px, py = [], [], []
+    for (u, v), (lat, lng) in vp["esquinas"].items():
+        filas.append((lat, lng, 1.0))
+        px.append((bx0 + u * (bx1 - bx0)) / ancho)
+        py.append((alto - (by0 + v * (by1 - by0))) / page.rect.height)
+
+    def resolver(objetivo):
+        # ecuaciones normales 3x3 (A^T A) c = A^T b, por eliminación de Gauss
+        m = [[sum(f[i] * f[j] for f in filas) for j in range(3)] + [sum(f[i] * b for f, b in zip(filas, objetivo))]
+             for i in range(3)]
+        for c in range(3):
+            piv = max(range(c, 3), key=lambda r: abs(m[r][c]))
+            m[c], m[piv] = m[piv], m[c]
+            for r in range(3):
+                if r != c:
+                    k = m[r][c] / m[c][c]
+                    m[r] = [a - k * b for a, b in zip(m[r], m[c])]
+        return [m[i][3] / m[i][i] for i in range(3)]
+
+    return [round(v, 6) for v in resolver(px) + resolver(py)]
+
+
 def contiene(vp, x, y, alto_pagina):
     bx0, by0, bx1, by1 = vp["bbox"]
     py = alto_pagina - y
@@ -190,7 +217,8 @@ def main():
         paginas.append({"p": pno + 1, "plano": f"data/planos/{archivo}",
                         "ancho": page.rect.width, "alto": page.rect.height,
                         "sur": min(c[0] for c in e.values()), "norte": max(c[0] for c in e.values()),
-                        "oeste": min(c[1] for c in e.values()), "este": max(c[1] for c in e.values())})
+                        "oeste": min(c[1] for c in e.values()), "este": max(c[1] for c in e.values()),
+                        "geo": geo_a_plano(vps[0], page)})
         print(f"pagina {pno + 1}: {cuenta} suministros")
 
     unidas, componentes = red.unir_tramos_sueltos()

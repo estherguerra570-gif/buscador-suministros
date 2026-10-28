@@ -1096,7 +1096,19 @@ async function abrirPlano(s) {
   visor.setMaxBounds(L.latLngBounds(limites).pad(0.2));
   const punto = [pg.alto * (1 - s.py), pg.ancho * s.px];
   L.circle(punto, { radius: 12, color: "#e00", weight: 3, fill: false }).addTo(visor);
-  visor.setView(punto, 2);
+  if (s.corregido && pg.geo) {
+    // ubicación corregida dibujada sobre la hoja del PDF (transformación lat/lng -> plano de extraer.py)
+    const [a, b, c, d, e, f] = pg.geo;
+    const nuevo = [pg.alto * (1 - (d * s.lat + e * s.lng + f)), pg.ancho * (a * s.lat + b * s.lng + c)];
+    L.polyline([punto, nuevo], { color: "#1a73e8", weight: 2, dashArray: "4 4" }).addTo(visor);
+    L.circleMarker(nuevo, { radius: 9, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 })
+      .bindTooltip("Ubicación corregida", { permanent: true, direction: "top", offset: [0, -8] }).addTo(visor);
+    L.marker(punto, { opacity: 0, interactive: false, icon: L.divIcon({ className: "", iconSize: [0, 0] }) })
+      .bindTooltip("Según el PDF", { permanent: true, direction: "bottom", offset: [0, 14] }).addTo(visor);
+    visor.fitBounds(L.latLngBounds([punto, nuevo]).pad(1.5), { maxZoom: 2 });
+  } else {
+    visor.setView(punto, 2);
+  }
 }
 $("#visor-cerrar").onclick = () => { $("#visor").hidden = true; };
 
@@ -1110,6 +1122,18 @@ function activarVista(nombre) {
   if (marcadorSeleccion) marcadorSeleccion[nombre === "buscar" ? "addTo" : "remove"](mapa);
   if (nombre === "ruta" && ruta.length) encuadrarRuta();
 }
+
+// ---------- Aviso flotante ----------
+let esperaAviso;
+function avisar(texto, bien = true) {
+  const a = $("#aviso");
+  a.textContent = texto;
+  a.classList.toggle("mal", !bien);
+  a.hidden = false;
+  clearTimeout(esperaAviso);
+  esperaAviso = setTimeout(() => { a.hidden = true; }, 6000);
+}
+$("#aviso").onclick = () => { $("#aviso").hidden = true; };
 
 // ---------- Panel inferior: se pliega para ver el mapa a pantalla completa ----------
 let textoPlegado = "";
