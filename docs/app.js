@@ -72,33 +72,21 @@ const capaCamino = L.layerGroup().addTo(mapa); // recorrido hasta el suministro 
 let marcadorSeleccion = null;
 let marcadorYo = null;
 
-const colorDe = (s) => ({ naranja: "#a87000", nuevo: "#7b1fa2" }[s.c] ?? "#267300");
-
 // ---------- Zonas: el detalle (calles, red, postes) se descarga por zonas de ~1 km, solo las que se usan ----------
-const ZOOM_SUMINISTROS = 17;       // desde este zoom se ven los puntos de suministro
+const ZOOM_HOJA = 17;              // zoom al tocar una página del plano
 const ZOOM_PLANO = 15;             // desde este zoom se ven manzanas y red
 let ZONA_GRADOS = 0.01;            // se toma de indice.json
 const claveZona = (lat, lng) => `${Math.floor(lat / ZONA_GRADOS)}_${Math.floor(lng / ZONA_GRADOS)}`;
 /** Zona donde está el detalle del suministro (si se corrigió su ubicación, sigue en la zona del plano). */
 const zonaDe = (s) => s.zonaPlano ?? claveZona(s.lat, s.lng);
-let celdasSuministros = new Map(); // zona -> suministros (para dibujar)
 const zonas = new Map();           // zona -> Promise<{m: manzanas, r: tramos de red}>
 const zonasListas = new Set();
 const capaHojas = L.layerGroup().addTo(mapa); // contorno de cada página del plano (zoom lejano)
 
-function indexarSuministros() {
-  celdasSuministros = new Map();
-  for (const s of datos.suministros) {
-    const k = claveZona(s.lat, s.lng);
-    if (!celdasSuministros.has(k)) celdasSuministros.set(k, []);
-    celdasSuministros.get(k).push(s);
-  }
-}
-
 function dibujarHojas() {
   for (const p of datos.paginas) {
     L.rectangle([[p.sur, p.oeste], [p.norte, p.este]], { renderer: lienzo, color: "#1f6f43", weight: 1, fillOpacity: 0.06 })
-      .bindTooltip(`Página ${p.p}`).on("click", (e) => mapa.setView(e.latlng, ZOOM_SUMINISTROS)).addTo(capaHojas);
+      .bindTooltip(`Página ${p.p}`).on("click", (e) => mapa.setView(e.latlng, ZOOM_HOJA)).addTo(capaHojas);
   }
 }
 
@@ -173,74 +161,6 @@ function sincronizar(capa, grupos) {
   for (const g of quiero) if (!capa.hasLayer(g)) capa.addLayer(g);
 }
 
-// ---------- Puntos de suministro: se pintan como mosaicos (igual que el mapa de fondo) ----------
-// En zonas densas hay decenas de miles de puntos a la vista. Como mosaicos se dibujan una sola vez por
-// cuadro de 256 px, y al arrastrar, acercar o girar el celular solo mueve imágenes ya hechas.
-mapa.createPane("puntos", mapa.getPane("rotatePane") ?? mapa.getPane("mapPane"));
-mapa.getPane("puntos").style.zIndex = 450; // sobre manzanas y recorridos, bajo los marcadores
-mapa.getPane("puntos").style.pointerEvents = "none";
-const radioPunto = (z) => (z >= 19 ? 5.5 : z >= 18 ? 4.5 : 3.5);
-
-const CapaPuntos = L.GridLayer.extend({
-  options: { pane: "puntos", minZoom: ZOOM_SUMINISTROS, maxZoom: 22, updateWhenZooming: false, keepBuffer: 3 },
-  createTile(coords) {
-    const tile = L.DomUtil.create("canvas", "leaflet-tile");
-    const tam = this.getTileSize();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    tile.width = tam.x * dpr;
-    tile.height = tam.y * dpr;
-    if (!datos) return tile;
-    const ctx = tile.getContext("2d");
-    ctx.scale(dpr, dpr);
-    const r = radioPunto(coords.z);
-    const origen = coords.scaleBy(tam);
-    const limites = this._tileCoordsToBounds(coords).pad(0.05);
-    const porColor = new Map();
-    for (const k of zonasEnLimites(limites)) {
-      for (const s of celdasSuministros.get(k) ?? []) {
-        if (!limites.contains([s.lat, s.lng])) continue;
-        const p = mapa.project([s.lat, s.lng], coords.z);
-        const color = colorDe(s);
-        if (!porColor.has(color)) porColor.set(color, []);
-        porColor.get(color).push(p.x - origen.x, p.y - origen.y);
-      }
-    }
-    ctx.lineWidth = 0.8;
-    ctx.strokeStyle = "#fff";
-    for (const [color, xy] of porColor) {
-      ctx.beginPath();
-      for (let i = 0; i < xy.length; i += 2) { ctx.moveTo(xy[i] + r, xy[i + 1]); ctx.arc(xy[i], xy[i + 1], r, 0, 2 * Math.PI); }
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.stroke();
-    }
-    return tile;
-  },
-});
-const capaPuntos = new CapaPuntos().addTo(mapa);
-
-/** Suministro más cercano a un toque (hasta ~22 px): más exacto que acertarle a un punto de 7 px con el dedo. */
-function suministroCercano(latlng, maxPx = 22) {
-  if (!datos || mapa.getZoom() < ZOOM_SUMINISTROS - 0.5) return null;
-  const toque = mapa.latLngToContainerPoint(latlng);
-  const grados = maxPx * 40075016 / 256 / Math.pow(2, mapa.getZoom()) / 111320 * 1.2; // px -> grados aprox.
-  const limites = L.latLngBounds([latlng.lat - grados, latlng.lng - grados * 1.1], [latlng.lat + grados, latlng.lng + grados * 1.1]);
-  let mejor = null, dm = maxPx;
-  for (const k of zonasEnLimites(limites)) {
-    for (const s of celdasSuministros.get(k) ?? []) {
-      if (!limites.contains([s.lat, s.lng])) continue;
-      const d = mapa.latLngToContainerPoint([s.lat, s.lng]).distanceTo(toque);
-      if (d < dm) { dm = d; mejor = s; }
-    }
-  }
-  return mejor;
-}
-mapa.on("click", (e) => {
-  if (document.body.classList.contains("eligiendo")) return; // se está marcando una ubicación (menu.js)
-  const s = suministroCercano(e.latlng);
-  if (s) { activarVista("buscar"); seleccionar(s.n); }
-});
-
 let versionDibujo = 0;
 async function dibujarVisible() {
   if (!datos) return;
@@ -263,13 +183,6 @@ mapa.on("rotate", () => {
   clearTimeout(esperaGiro);
   esperaGiro = setTimeout(dibujarVisible, 250); // al girar entran zonas nuevas por las esquinas
 });
-
-/** Vuelve a indexar y pintar los suministros (por ejemplo, tras agregar uno a mano o corregir su ubicación). */
-function dibujarTodos() {
-  indexarSuministros();
-  capaPuntos.redraw();
-  dibujarVisible();
-}
 
 // ---------- Girar el mapa ----------
 const PASO_GIRO = 30;
@@ -417,12 +330,10 @@ async function cargarDatos() {
   for (const p of datos.paginas) paginas.set(p.p, p);
   $("#estado-datos").textContent =
     `${suministros.length.toLocaleString("es-PE")} suministros cargados (${datos.paginas.length} páginas del plano). ` +
-    `Acerca el mapa para ver los puntos.`;
+    `Busca un número para verlo en el mapa.`;
   incorporarPropios(); // suministros agregados a mano (menu.js)
   await aplicarCorrecciones(); // ubicaciones corregidas (menu.js)
   dibujarHojas();
-  indexarSuministros();
-  capaPuntos.redraw();
   const b = L.latLngBounds(datos.paginas.flatMap((p) => [[p.sur, p.oeste], [p.norte, p.este]]));
   if (b.isValid()) mapa.fitBounds(b, { padding: [20, 20] });
   dibujarVisible();

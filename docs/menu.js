@@ -154,7 +154,7 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
     </div>
     <p id="a-error" class="nota alerta" hidden></p>
     <div class="fila"><button id="a-guardar" class="btn primario">Guardar suministro</button></div>
-    <p class="nota">Se guarda en este celular${usuario ? ` a nombre de ${escapar(usuario)}` : ""} y aparece en el mapa en morado.</p>`);
+    <p class="nota">Se guarda en este celular${usuario ? ` a nombre de ${escapar(usuario)}` : ""}. Al buscarlo se muestra en el mapa.</p>`);
 
   const leerFormulario = () => {
     borrador.n = $("#a-numero").value.replace(/\D/g, "");
@@ -187,7 +187,6 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
     const s = { ...nuevo };
     datos.suministros.push(s);
     indice.set(s.n, s);
-    dibujarTodos();
     cerrarHoja();
     activarVista("buscar");
     seleccionar(s.n);
@@ -257,9 +256,8 @@ async function aplicarCorrecciones() {
   }
 }
 
-/** Después de mover un punto: se redibuja el mapa, la ruta y el menú. */
+/** Después de mover un punto: se redibuja la ruta y el menú. */
 function refrescarTrasMover() {
-  dibujarTodos();
   pintarRuta();
   pintarCabeceraMenu();
 }
@@ -407,7 +405,6 @@ function hojaMisPuntos() {
         datos.suministros = datos.suministros.filter((s) => s.n !== n);
         ruta = ruta.filter((x) => x !== n);
         guardar(CLAVE_RUTA, ruta);
-        dibujarTodos();
         pintarRuta();
       }
       hojaMisPuntos();
