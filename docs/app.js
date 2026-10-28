@@ -32,13 +32,24 @@ function guardar(clave, valor) {
 }
 
 // ---------- Mapa ----------
-// rotate/touchRotate (leaflet-rotate): se gira con dos dedos o con los botones ⟲ ⟳; la brújula vuelve al norte.
+// leaflet-rotate redibuja todo el lienzo en cada evento de giro; con limitarlo a unas pocas veces por segundo
+// el giro va fluido (el lienzo ya gira con el mapa, solo hace falta rellenar las esquinas).
+const LienzoGiro = L.Canvas.extend({
+  getEvents() {
+    const ev = L.Canvas.prototype.getEvents.call(this);
+    if (ev.rotate) ev.rotate = this._alGirar ??= L.Util.throttle(this._update, 150, this);
+    return ev;
+  },
+});
+const lienzo = new LienzoGiro({ padding: 0.3 });
+// rotate/touchRotate (leaflet-rotate, ajustado en gestos.js): se gira con dos dedos o con los botones ⟲ ⟳.
+// zoomSnap 0: al soltar el pellizco el mapa queda exactamente donde se dejó, sin saltar a un zoom redondo.
 const mapa = L.map("mapa", {
   zoomControl: false, preferCanvas: true, rotate: true, touchRotate: true, rotateControl: false, bearing: 0,
-  zoomSnap: 0.5, wheelPxPerZoomLevel: 90,
+  zoomSnap: 0, zoomDelta: 1, wheelPxPerZoomLevel: 90, bounceAtZoomLimits: false, renderer: lienzo,
 }).setView([-16.2522, -71.6802], 15);
 L.control.zoom({ position: "topleft" }).addTo(mapa);
-const lienzo = L.canvas({ padding: 0.3, tolerance: 6 }); // tolerance: más fácil tocar un punto con el dedo
+
 const fondos = {
   "Mapa + calles del plano": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 20, maxNativeZoom: 19, updateWhenZooming: false, keepBuffer: 4,
@@ -56,7 +67,6 @@ L.control.layers(fondos, { "Manzanas del plano": capaManzanas, "Red eléctrica (
   { position: "topright" }).addTo(mapa);
 mapa.on("baselayerchange", (e) => guardar(CLAVE_FONDO, e.name));
 
-const capaTodos = L.layerGroup().addTo(mapa);
 const capaRuta = L.layerGroup().addTo(mapa);
 const capaCamino = L.layerGroup().addTo(mapa); // recorrido hasta el suministro buscado
 let marcadorSeleccion = null;
@@ -135,30 +145,22 @@ function zonasPara(puntos) {
 const zonasCargadas = (puntos) => zonasPara(puntos).every((k) => zonasListas.has(k));
 const asegurarZonas = (puntos) => Promise.all(zonasPara(puntos.filter(Boolean)).map(cargarZona));
 
-function zonasEnPantalla() {
-  const b = mapa.getBounds();
+function zonasEnLimites(b) {
   const claves = [];
   for (let y = Math.floor(b.getSouth() / ZONA_GRADOS); y <= Math.floor(b.getNorth() / ZONA_GRADOS); y++)
     for (let x = Math.floor(b.getWest() / ZONA_GRADOS); x <= Math.floor(b.getEast() / ZONA_GRADOS); x++) claves.push(`${y}_${x}`);
   return claves;
 }
+const zonasEnPantalla = () => zonasEnLimites(mapa.getBounds());
 
-// Las capas de cada zona se arman una sola vez y después solo se ponen o se sacan del mapa al moverlo
-// (antes se rehacían todas en cada movimiento, y eso volvía lento el arrastre).
-const capasZona = new Map();  // `${tipo}:${zona}` -> L.LayerGroup (tipo: m manzanas, r red, s suministros)
+// Las capas de cada zona se arman una sola vez y después solo se ponen o se sacan del mapa al moverlo.
+const capasZona = new Map();  // `${tipo}:${zona}` -> L.LayerGroup (tipo: m manzanas, r red)
 function capaDeZona(tipo, k, zd) {
   const clave = `${tipo}:${k}`;
   if (!capasZona.has(clave)) {
     const g = L.layerGroup();
     if (tipo === "m") for (const pts of zd.m) L.polyline(pts, { renderer: lienzo, color: "#4a4f4c", weight: 1.2, opacity: 0.8, interactive: false }).addTo(g);
     if (tipo === "r") for (const l of zd.r) L.polyline(l, { renderer: lienzo, color: "#005ce6", weight: 1, opacity: 0.6, interactive: false }).addTo(g);
-    if (tipo === "s") {
-      for (const s of celdasSuministros.get(k) ?? []) {
-        L.circleMarker([s.lat, s.lng], {
-          renderer: lienzo, radius: 3.5, color: "#fff", weight: 0.5, fillColor: colorDe(s), fillOpacity: 0.95,
-        }).on("click", () => seleccionar(s.n)).addTo(g);
-      }
-    }
     capasZona.set(clave, g);
   }
   return capasZona.get(clave);
@@ -170,6 +172,74 @@ function sincronizar(capa, grupos) {
   capa.eachLayer((g) => { if (!quiero.has(g)) capa.removeLayer(g); });
   for (const g of quiero) if (!capa.hasLayer(g)) capa.addLayer(g);
 }
+
+// ---------- Puntos de suministro: se pintan como mosaicos (igual que el mapa de fondo) ----------
+// En zonas densas hay decenas de miles de puntos a la vista. Como mosaicos se dibujan una sola vez por
+// cuadro de 256 px, y al arrastrar, acercar o girar el celular solo mueve imágenes ya hechas.
+mapa.createPane("puntos", mapa.getPane("rotatePane") ?? mapa.getPane("mapPane"));
+mapa.getPane("puntos").style.zIndex = 450; // sobre manzanas y recorridos, bajo los marcadores
+mapa.getPane("puntos").style.pointerEvents = "none";
+const radioPunto = (z) => (z >= 19 ? 5.5 : z >= 18 ? 4.5 : 3.5);
+
+const CapaPuntos = L.GridLayer.extend({
+  options: { pane: "puntos", minZoom: ZOOM_SUMINISTROS, maxZoom: 22, updateWhenZooming: false, keepBuffer: 3 },
+  createTile(coords) {
+    const tile = L.DomUtil.create("canvas", "leaflet-tile");
+    const tam = this.getTileSize();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    tile.width = tam.x * dpr;
+    tile.height = tam.y * dpr;
+    if (!datos) return tile;
+    const ctx = tile.getContext("2d");
+    ctx.scale(dpr, dpr);
+    const r = radioPunto(coords.z);
+    const origen = coords.scaleBy(tam);
+    const limites = this._tileCoordsToBounds(coords).pad(0.05);
+    const porColor = new Map();
+    for (const k of zonasEnLimites(limites)) {
+      for (const s of celdasSuministros.get(k) ?? []) {
+        if (!limites.contains([s.lat, s.lng])) continue;
+        const p = mapa.project([s.lat, s.lng], coords.z);
+        const color = colorDe(s);
+        if (!porColor.has(color)) porColor.set(color, []);
+        porColor.get(color).push(p.x - origen.x, p.y - origen.y);
+      }
+    }
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = "#fff";
+    for (const [color, xy] of porColor) {
+      ctx.beginPath();
+      for (let i = 0; i < xy.length; i += 2) { ctx.moveTo(xy[i] + r, xy[i + 1]); ctx.arc(xy[i], xy[i + 1], r, 0, 2 * Math.PI); }
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.stroke();
+    }
+    return tile;
+  },
+});
+const capaPuntos = new CapaPuntos().addTo(mapa);
+
+/** Suministro más cercano a un toque (hasta ~22 px): más exacto que acertarle a un punto de 7 px con el dedo. */
+function suministroCercano(latlng, maxPx = 22) {
+  if (!datos || mapa.getZoom() < ZOOM_SUMINISTROS - 0.5) return null;
+  const toque = mapa.latLngToContainerPoint(latlng);
+  const grados = maxPx * 40075016 / 256 / Math.pow(2, mapa.getZoom()) / 111320 * 1.2; // px -> grados aprox.
+  const limites = L.latLngBounds([latlng.lat - grados, latlng.lng - grados * 1.1], [latlng.lat + grados, latlng.lng + grados * 1.1]);
+  let mejor = null, dm = maxPx;
+  for (const k of zonasEnLimites(limites)) {
+    for (const s of celdasSuministros.get(k) ?? []) {
+      if (!limites.contains([s.lat, s.lng])) continue;
+      const d = mapa.latLngToContainerPoint([s.lat, s.lng]).distanceTo(toque);
+      if (d < dm) { dm = d; mejor = s; }
+    }
+  }
+  return mejor;
+}
+mapa.on("click", (e) => {
+  if (document.body.classList.contains("eligiendo")) return; // se está marcando una ubicación (menu.js)
+  const s = suministroCercano(e.latlng);
+  if (s) { activarVista("buscar"); seleccionar(s.n); }
+});
 
 let versionDibujo = 0;
 async function dibujarVisible() {
@@ -183,7 +253,6 @@ async function dibujarVisible() {
   const visibles = claves.slice(0, detalle.length);
   sincronizar(capaManzanas, visibles.map((k, i) => capaDeZona("m", k, detalle[i])));
   sincronizar(capaRedBT, mapa.hasLayer(capaRedBT) ? visibles.map((k, i) => capaDeZona("r", k, detalle[i])) : []);
-  sincronizar(capaTodos, z >= ZOOM_SUMINISTROS ? visibles.map((k) => capaDeZona("s", k)) : []);
 }
 mapa.on("moveend", dibujarVisible);
 mapa.on("overlayadd", dibujarVisible);
@@ -198,7 +267,7 @@ mapa.on("rotate", () => {
 /** Vuelve a indexar y pintar los suministros (por ejemplo, tras agregar uno a mano o corregir su ubicación). */
 function dibujarTodos() {
   indexarSuministros();
-  for (const [clave, g] of capasZona) if (clave.startsWith("s:")) { capaTodos.removeLayer(g); capasZona.delete(clave); }
+  capaPuntos.redraw();
   dibujarVisible();
 }
 
@@ -353,6 +422,7 @@ async function cargarDatos() {
   await aplicarCorrecciones(); // ubicaciones corregidas (menu.js)
   dibujarHojas();
   indexarSuministros();
+  capaPuntos.redraw();
   const b = L.latLngBounds(datos.paginas.flatMap((p) => [[p.sur, p.oeste], [p.norte, p.este]]));
   if (b.isValid()) mapa.fitBounds(b, { padding: [20, 20] });
   dibujarVisible();
@@ -882,19 +952,17 @@ function plegarPanel(cerrar, texto) {
     if (cerrar) $("#resumen-panel").textContent = textoPlegado || "Ver panel";
     return;
   }
-  // se conserva el punto del mapa que queda al centro de la parte visible
-  const centro = mapa.getCenter();
   body.classList.toggle("panel-cerrado", cerrar);
   if (cerrar) $("#panel").scrollTop = 0;
   $("#flecha-panel").textContent = cerrar ? "▲" : "▼";
   $("#resumen-panel").textContent = cerrar ? (textoPlegado || "Ver panel") : "Ocultar panel";
   $("#btn-panel").setAttribute("aria-expanded", String(!cerrar));
+  // pan: false -> el mapa solo crece o se achica por abajo; lo que se está viendo no salta de lugar
   mapa.invalidateSize({ pan: false });
-  mapa.setView(centro, mapa.getZoom(), { animate: false });
 }
 $("#btn-panel").onclick = () => plegarPanel(!document.body.classList.contains("panel-cerrado"));
-// al arrastrar el mapa con la ficha abierta, el panel baja solo
-mapa.on("dragstart", () => { if (seleccionActual && !$("#ficha").hidden && $("#ficha").offsetParent) plegarPanel(true); });
+// al terminar de arrastrar el mapa con la ficha abierta, el panel baja solo (durante el arrastre no se toca nada)
+mapa.on("dragend", () => { if (seleccionActual && !$("#ficha").hidden && $("#ficha").offsetParent) plegarPanel(true); });
 
 // Mientras se escribe solo se sugieren números; el suministro se abre con "Buscar".
 let espera;
