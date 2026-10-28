@@ -250,3 +250,30 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
 @media (min-width: 900px) {
   .tirador { display: none; }
 }
+
+/* Recorrido en vivo */
+.btn-seguir {
+  position: absolute; left: 12px; bottom: calc(45% + 16px); z-index: 500;
+  padding: 12px 18px; border: 0; border-radius: 24px; background: #1a73e8; color: #fff;
+  font: inherit; font-weight: 700; font-size: 15px; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.btn-seguir.activo { background: #fff; color: #c62828; }
+.opciones-ruta { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.opcion-ruta {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; text-align: left;
+  padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: #fff;
+  font: inherit; font-size: 14px; color: var(--texto);
+}
+.opcion-ruta small { flex-basis: 100%; color: var(--suave); font-size: 12px; }
+.opcion-ruta.activa { border: 2px solid #1a73e8; background: #e8f0fe; }
+.etiqueta-alt {
+  display: inline-block; transform: translate(-50%, -50%); white-space: nowrap;
+  padding: 3px 8px; border-radius: 10px; background: #fff; color: #3c4043;
+  font: 700 12px system-ui, sans-serif; border: 1px solid #b7c3cc; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+@media (max-width: 899px) {
+  .panel-cerrado .btn-seguir { bottom: calc(48px + env(safe-area-inset-bottom) + 16px); }
+}
+@media (min-width: 900px) {
+  .btn-seguir { bottom: 24px; left: 50%; transform: translateX(-50%); margin-left: -190px; }
+}

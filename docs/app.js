@@ -408,6 +408,7 @@ function seleccionar(n) {
   f.innerHTML = `
     <h2><span class="punto ${s.c}"></span>${s.n}</h2>
     <p id="f-recorrido" class="recorrido gris">Calculando recorrido desde tu ubicación…</p>
+    <div id="f-rutas" class="opciones-ruta" hidden></div>
     <dl>
       ${propio
         ? `<dt>Origen</dt><dd>Agregado${s.por ? " por " + escapar(s.por) : ""} el ${new Date(s.fecha).toLocaleDateString("es-PE")}</dd>
@@ -436,42 +437,295 @@ function seleccionar(n) {
   }
 }
 
-/** Dibuja el recorrido en moto desde mi ubicación hasta el suministro, al estilo de Google Maps. */
-async function trazarCamino(s) {
+// ---------- Recorrido en vivo hasta el suministro (como Google Maps) ----------
+// Mientras la ficha está abierta se sigue el GPS: la ruta se recalcula al avanzar o al salirse del camino,
+// y se muestran hasta 3 caminos por calles de OpenStreetMap, siempre con el más corto primero.
+const RECALCULAR_METROS = 40;     // recalcula al moverse esta distancia desde el último cálculo
+const FUERA_DE_RUTA_METROS = 35;  // o antes, si se aleja así de la ruta elegida
+const LLEGADA_METROS = 25;
+const OSRM_CADA_MS = 15000;       // el servidor gratuito de OSRM pide no abusar
+let nav = null; // {s, rutas, elegida, desde, siguiendo, vigia, calculando, osrmHora, osm, llego}
+
+function detenerNavegacion() {
+  if (!nav) return;
+  if (nav.vigia !== null) navigator.geolocation.clearWatch(nav.vigia);
+  nav = null;
   capaCamino.clearLayers();
-  const texto = (t, gris = false) => {
-    const p = $("#f-recorrido");
-    if (p && seleccionActual === s.n) { p.textContent = t; p.classList.toggle("gris", gris); }
-  };
-  const yo = await obtenerUbicacion().catch(() => null);
-  if (seleccionActual !== s.n) return;
-  if (!yo) return texto("Activa el GPS (y el permiso de ubicación) para ver el recorrido.", true);
-
-  const inicio = { ...yo };
-  await asegurarZonas([s, dist(yo, s) < 5000 ? yo : null]);
-  const t = tramo(inicio, s);
-  let { puntos, metros } = t;
-  let segundos = metros / VELOCIDAD_MOTO_MS;
-  let porCalle = t.porCalle;
-  if (!porCalle) {
-    try {
-      const r = await rutaOsrm(inicio, s);
-      ({ puntos, metros, segundos } = r);
-      porCalle = true;
-    } catch { /* sin internet: queda en línea recta */ }
-  }
-  if (seleccionActual !== s.n) return;
-
-  const latlngs = puntos.map((p) => [p.lat, p.lng]);
-  L.polyline(latlngs, { color: "#1557b0", weight: 9, opacity: 0.9, dashArray: porCalle ? null : "8 8" }).addTo(capaCamino);
-  L.polyline(latlngs, { color: "#4285f4", weight: 6, opacity: 1, dashArray: porCalle ? null : "8 8" }).addTo(capaCamino);
-  L.circleMarker([yo.lat, yo.lng], { radius: 7, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 })
-    .bindTooltip("Tú").addTo(capaCamino);
-  mapa.fitBounds(L.latLngBounds(latlngs).extend([s.lat, s.lng]), { padding: [40, 40], maxZoom: 18 });
-  const resumen = `${formatoDist(metros)} · ${formatoTiempo(segundos)} en moto`;
-  texto(resumen + (porCalle ? "" : " (línea recta, sin conexión)"));
-  textoPanel(`${s.n} · ${resumen}`);
+  $("#btn-seguir").hidden = true;
 }
+
+function trazarCamino(s) {
+  detenerNavegacion();
+  const n = { s, rutas: [], elegida: 0, desde: null, siguiendo: false, vigia: null, calculando: false, osrmHora: 0, osm: null, llego: false };
+  nav = n;
+  if (!navigator.geolocation) return textoRecorrido("Este navegador no permite obtener la ubicación.", true);
+  n.vigia = navigator.geolocation.watchPosition(
+    (p) => { if (nav === n) alMoverme(p); },
+    () => { if (nav === n && !n.rutas.length) textoRecorrido("Activa el GPS (y el permiso de ubicación) para ver el recorrido.", true); },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
+  );
+  $("#btn-seguir").hidden = false;
+  pintarBotonSeguir();
+}
+
+function textoRecorrido(t, gris = false) {
+  const p = $("#f-recorrido");
+  if (p) { p.textContent = t; p.classList.toggle("gris", gris); }
+}
+
+function alMoverme(p) {
+  ponerMiPosicion(p);
+  const yo = { ...miPosicion };
+  const n = nav;
+  if (n.siguiendo) mapa.panTo([yo.lat, yo.lng], { animate: true, duration: 0.5 });
+  if (dist(yo, n.s) < LLEGADA_METROS) {
+    if (!n.llego) {
+      n.llego = true;
+      textoRecorrido("✓ Llegaste al suministro");
+      textoPanel(`${n.s.n} · ✓ Llegaste`);
+      capaCamino.clearLayers();
+    }
+    return;
+  }
+  n.llego = false;
+  const r = n.rutas[n.elegida];
+  const movido = n.desde ? dist(yo, n.desde) : Infinity;
+  const fuera = r ? distanciaALinea(yo, r.puntos) > FUERA_DE_RUTA_METROS : true;
+  if (!n.rutas.length || movido > RECALCULAR_METROS || (fuera && movido > 10)) recalcular(yo, fuera);
+  else actualizarResumen(yo);
+}
+
+/**
+ * Las calles de OpenStreetMap mandan: la red del plano es el cableado eléctrico y da caminos mucho más largos,
+ * así que solo se usa sin internet. Entre consulta y consulta a OSRM, las rutas ya traídas se recortan
+ * desde donde estoy; al salirse del camino o cada 15 s se piden de nuevo (puede aparecer una más corta).
+ */
+async function recalcular(yo, fuera = false) {
+  const n = nav;
+  if (n.calculando) return;
+  n.calculando = true;
+  try {
+    const primera = !n.rutas.length;
+    if (primera) textoRecorrido("Calculando recorrido…", true);
+    const desdeUltima = Date.now() - n.osrmHora;
+    let candidatas = [];
+    if (primera || desdeUltima > OSRM_CADA_MS || (fuera && desdeUltima > 5000)) {
+      n.osrmHora = Date.now();
+      try { n.osm = await rutasOsrm(yo, n.s); candidatas = n.osm; } catch { /* sin internet */ }
+    }
+    if (!candidatas.length && n.osm) {
+      candidatas = n.osm.filter((r) => distanciaALinea(yo, r.puntos) <= FUERA_DE_RUTA_METROS).map((r) => recortar(r, yo));
+    }
+    if (!candidatas.length) {
+      await asegurarZonas([n.s, dist(yo, n.s) < 5000 ? yo : null]);
+      candidatas = rutasPorPlano(yo, n.s);
+    }
+    if (nav !== n) return;
+    if (!candidatas.length) {
+      const metros = dist(yo, n.s) * PENALIDAD_RECTA;
+      candidatas = [{ puntos: [yo, n.s], metros, segundos: metros / VELOCIDAD_MOTO_MS, fuente: "recta" }];
+    }
+    n.rutas = elegirDistintas(candidatas, 3);
+    n.elegida = 0; // siempre la más corta desde donde estoy
+    n.desde = yo;
+    pintarRutas();
+    if (primera) {
+      const b = L.latLngBounds(n.rutas.flatMap((r) => r.puntos.map((q) => [q.lat, q.lng])));
+      mapa.fitBounds(b, { padding: [40, 40], maxZoom: 18 });
+    }
+    actualizarResumen(miPosicion ?? yo);
+  } finally {
+    n.calculando = false;
+  }
+}
+
+/** La parte de una ruta que queda por delante desde `yo`. */
+function recortar(r, yo) {
+  let mejor = Infinity, desde = 1;
+  for (let i = 1; i < r.puntos.length; i++) {
+    const d = distanciaALinea(yo, [r.puntos[i - 1], r.puntos[i]]);
+    if (d < mejor) { mejor = d; desde = i; }
+  }
+  const puntos = [yo, ...r.puntos.slice(desde)];
+  const metros = largo(puntos);
+  return { ...r, puntos, metros, segundos: r.segundos * (metros / r.metros) };
+}
+
+/** Hasta 3 caminos por la red del plano (sin internet): el más corto y desvíos que se le parezcan poco. */
+function rutasPorPlano(a, b) {
+  const na = nodoCercano(a, 150), nb = nodoDe(b);
+  if (na == null || nb == null) return [];
+  const rutas = [], usados = new Map(); // arista -> veces usada (se encarece para buscar otro camino)
+  for (let intento = 0; intento < 4 && rutas.length < 3; intento++) {
+    const camino = caminoMasCorto(na, nb, usados);
+    if (!camino) break;
+    const puntos = [a, ...camino.map((i) => grafo.n[i]), b];
+    const metros = largo(puntos);
+    for (let i = 1; i < camino.length; i++) {
+      const k = claveArista(camino[i - 1], camino[i]);
+      usados.set(k, (usados.get(k) ?? 0) + 1);
+    }
+    if (rutas.length && metros > rutas[0].metros * 1.6) break;
+    rutas.push({ puntos, metros, segundos: metros / VELOCIDAD_MOTO_MS, fuente: "plano" });
+  }
+  return rutas;
+}
+const claveArista = (i, j) => (i < j ? `${i}-${j}` : `${j}-${i}`);
+const largo = (pts) => pts.reduce((t, q, i) => (i ? t + dist(pts[i - 1], q) : 0), 0);
+
+/** Dijkstra de un nodo a otro; cada vez que una arista ya fue usada cuesta el doble. Se detiene al llegar. */
+function caminoMasCorto(origen, destino, usados) {
+  const d = new Map([[origen, 0]]), previo = new Map(), h = [[0, origen]];
+  while (h.length) {
+    const [du, u] = sacar(h);
+    if (u === destino) break;
+    if (du > d.get(u)) continue;
+    for (const [v, w] of grafo.ady[u]) {
+      const nd = du + w * (1 + (usados.get(claveArista(u, v)) ?? 0));
+      if (nd < (d.get(v) ?? Infinity)) { d.set(v, nd); previo.set(v, u); meter(h, [nd, v]); }
+    }
+  }
+  if (!d.has(destino)) return null;
+  const camino = [];
+  for (let v = destino; v !== undefined; v = previo.get(v)) camino.push(v);
+  return camino.reverse();
+}
+
+/** Caminos de OpenStreetMap (OSRM con alternativas). */
+async function rutasOsrm(a, b) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${a.lng.toFixed(6)},${a.lat.toFixed(6)};` +
+    `${b.lng.toFixed(6)},${b.lat.toFixed(6)}?overview=full&geometries=geojson&alternatives=3`;
+  const j = await (await fetch(url)).json();
+  if (j.code !== "Ok") throw new Error(j.code);
+  return j.routes.map((r) => ({
+    puntos: [a, ...r.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })), b],
+    metros: r.distance, segundos: r.duration, fuente: "osm",
+  }));
+}
+
+/** Ordena por largo y descarta las que casi repiten a una más corta. */
+function elegirDistintas(candidatas, max) {
+  const elegidas = [];
+  for (const c of [...candidatas].sort((x, y) => x.metros - y.metros)) {
+    if (elegidas.length && c.metros > elegidas[0].metros * 1.6) break;
+    if (elegidas.some((e) => parecido(c.puntos, e.puntos) > 0.75)) continue;
+    elegidas.push(c);
+    if (elegidas.length === max) break;
+  }
+  return elegidas;
+}
+/** Fracción del camino `a` que pasa a menos de 20 m del camino `b`. */
+function parecido(a, b) {
+  const muestras = remuestrear(a, 25);
+  return muestras.filter((q) => distanciaALinea(q, b) < 20).length / muestras.length;
+}
+function remuestrear(pts, paso) {
+  const r = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const d = dist(pts[i - 1], pts[i]);
+    for (let x = paso; x < d; x += paso) {
+      const f = x / d;
+      r.push({ lat: pts[i - 1].lat + (pts[i].lat - pts[i - 1].lat) * f, lng: pts[i - 1].lng + (pts[i].lng - pts[i - 1].lng) * f });
+    }
+    r.push(pts[i]);
+  }
+  return r;
+}
+/** Distancia en metros de un punto a una línea (aproximación plana, suficiente a escala de ciudad). */
+function distanciaALinea(p, linea) {
+  if (linea.length < 2) return dist(p, linea[0]);
+  const kx = 111320 * Math.cos(p.lat * Math.PI / 180), ky = 110540;
+  let mejor = Infinity;
+  for (let i = 1; i < linea.length; i++) {
+    const ax = (linea[i - 1].lng - p.lng) * kx, ay = (linea[i - 1].lat - p.lat) * ky;
+    const dx = (linea[i].lng - p.lng) * kx - ax, dy = (linea[i].lat - p.lat) * ky - ay;
+    const l2 = dx * dx + dy * dy;
+    const f = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+    mejor = Math.min(mejor, Math.hypot(ax + f * dx, ay + f * dy));
+  }
+  return mejor;
+}
+
+/** La elegida en azul encima; las alternativas en gris con su tiempo; tocando una gris se elige. */
+function pintarRutas() {
+  capaCamino.clearLayers();
+  const n = nav;
+  n.rutas.forEach((r, i) => {
+    if (i === n.elegida) return;
+    const ll = r.puntos.map((q) => [q.lat, q.lng]);
+    const elegir = () => elegirRuta(i);
+    L.polyline(ll, { color: "#7d8a93", weight: 9, opacity: 0.9 }).on("click", elegir).addTo(capaCamino);
+    L.polyline(ll, { color: "#b7c3cc", weight: 6, opacity: 1 }).on("click", elegir).addTo(capaCamino);
+    L.marker(ll[Math.floor(ll.length / 2)], {
+      icon: L.divIcon({ className: "", html: `<div class="etiqueta-alt">${formatoTiempo(r.segundos)}</div>`, iconSize: [0, 0] }),
+    }).on("click", elegir).addTo(capaCamino);
+  });
+  const r = n.rutas[n.elegida];
+  const ll = r.puntos.map((q) => [q.lat, q.lng]);
+  const raya = r.fuente === "recta" ? "8 8" : null;
+  L.polyline(ll, { color: "#1557b0", weight: 9, opacity: 0.95, dashArray: raya, interactive: false }).addTo(capaCamino);
+  L.polyline(ll, { color: "#4285f4", weight: 6, opacity: 1, dashArray: raya, interactive: false }).addTo(capaCamino);
+  pintarOpciones();
+}
+function elegirRuta(i) {
+  if (!nav) return;
+  nav.elegida = i;
+  pintarRutas();
+  actualizarResumen(miPosicion ?? nav.desde);
+}
+
+/** Lo que falta por la ruta elegida, contado desde donde estoy ahora. */
+function actualizarResumen(yo) {
+  const n = nav;
+  const r = n?.rutas[n.elegida];
+  if (!r || !yo) return;
+  const resto = Math.max(dist(yo, n.s), r.metros - avanceSobre(yo, r.puntos));
+  const resumen = `${formatoDist(resto)} · ${formatoTiempo(r.segundos * (resto / r.metros))} en moto`;
+  textoRecorrido(resumen + (r.fuente === "recta" ? " (línea recta, sin conexión)" : ""));
+  textoPanel(`${n.s.n} · ${resumen}`);
+}
+/** Metros ya avanzados sobre la línea (hasta su punto más cercano a `p`). */
+function avanceSobre(p, linea) {
+  let mejor = Infinity, avance = 0, acumulado = 0;
+  for (let i = 1; i < linea.length; i++) {
+    const largoTramo = dist(linea[i - 1], linea[i]);
+    const d = distanciaALinea(p, [linea[i - 1], linea[i]]);
+    if (d < mejor) { mejor = d; avance = acumulado + Math.min(dist(linea[i - 1], p), largoTramo); }
+    acumulado += largoTramo;
+  }
+  return avance;
+}
+
+/** Botones con cada ruta en la ficha (la más corta primero). */
+function pintarOpciones() {
+  const cont = $("#f-rutas");
+  const n = nav;
+  if (!cont || !n) return;
+  cont.hidden = n.rutas.length < 2;
+  cont.innerHTML = n.rutas.map((r, i) => `
+    <button class="opcion-ruta ${i === n.elegida ? "activa" : ""}" data-i="${i}">
+      <strong>${formatoTiempo(r.segundos)}</strong> · ${formatoDist(r.metros)}${i === 0 ? " · más corta" : ""}
+      <small>${r.fuente === "plano" ? "por la red del plano" : r.fuente === "osm" ? "por calles de OpenStreetMap" : "línea recta"}</small>
+    </button>`).join("");
+  cont.querySelectorAll("[data-i]").forEach((b) => { b.onclick = () => elegirRuta(+b.dataset.i); });
+}
+
+/** "Iniciar recorrido": el mapa acompaña mis movimientos; si lo arrastro, se pausa. */
+function pintarBotonSeguir() {
+  const b = $("#btn-seguir");
+  b.textContent = nav?.siguiendo ? "■ Dejar de seguir" : "▶ Iniciar recorrido";
+  b.classList.toggle("activo", !!nav?.siguiendo);
+}
+$("#btn-seguir").onclick = () => {
+  if (!nav) return;
+  nav.siguiendo = !nav.siguiendo;
+  pintarBotonSeguir();
+  if (nav.siguiendo) {
+    plegarPanel(true);
+    if (miPosicion) mapa.setView([miPosicion.lat, miPosicion.lng], Math.max(mapa.getZoom(), 18));
+  }
+};
+mapa.on("dragstart", () => { if (nav?.siguiendo) { nav.siguiendo = false; pintarBotonSeguir(); } });
 
 // ---------- Google Maps ----------
 function modo() { return "two-wheeler"; } // las visitas se hacen en moto
@@ -806,6 +1060,12 @@ let seguimiento = null;
 $("#btn-ubicacion").onclick = () => {
   const btn = $("#btn-ubicacion");
   if (!navigator.geolocation) return alert("Este navegador no permite obtener la ubicación.");
+  if (nav) { // con un recorrido abierto: centrar en mí y seguirme
+    nav.siguiendo = true;
+    pintarBotonSeguir();
+    if (miPosicion) mapa.setView([miPosicion.lat, miPosicion.lng], Math.max(mapa.getZoom(), 18));
+    return;
+  }
   if (seguimiento === null) {
     btn.classList.add("activo");
     let primera = true;
@@ -846,6 +1106,7 @@ function activarVista(nombre) {
   plegarPanel(false);
   capaRuta[nombre === "ruta" ? "addTo" : "remove"](mapa);
   capaCamino[nombre === "buscar" ? "addTo" : "remove"](mapa);
+  if (nombre !== "buscar") detenerNavegacion();
   if (marcadorSeleccion) marcadorSeleccion[nombre === "buscar" ? "addTo" : "remove"](mapa);
   if (nombre === "ruta" && ruta.length) encuadrarRuta();
 }
@@ -883,7 +1144,7 @@ $("#buscador").addEventListener("input", (e) => {
   if (e.target.value.replace(/\D/g, "") !== seleccionActual) {
     $("#ficha").hidden = true;
     seleccionActual = null;
-    capaCamino.clearLayers();
+    detenerNavegacion();
     textoPlegado = "";
   }
   espera = setTimeout(() => buscar(e.target.value), 120);
