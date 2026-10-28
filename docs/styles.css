@@ -208,3 +208,45 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
   .panel { inset: 0 0 0 auto; width: 380px; border-top: 0; border-left: 1px solid var(--borde); }
   .flotante { right: 392px; bottom: 24px; }
 }
+
+/* Botones para girar el mapa (también se gira con dos dedos) */
+.giro {
+  position: absolute; left: 10px; top: 92px; z-index: 500;
+  display: flex; flex-direction: column; border-radius: 8px; overflow: hidden;
+  border: 2px solid rgba(0,0,0,.2); background: #fff;
+}
+.giro button {
+  width: 34px; height: 34px; border: 0; border-bottom: 1px solid var(--borde); background: #fff;
+  font-size: 18px; line-height: 1; color: var(--texto); padding: 0;
+}
+.giro button:last-child { border-bottom: 0; }
+#btn-norte { display: grid; place-items: center; position: relative; }
+#btn-norte small { position: absolute; bottom: 1px; font-size: 8px; font-weight: 700; color: var(--suave); }
+#aguja { display: inline-block; color: #c62828; font-size: 14px; transform-origin: 50% 50%; }
+#btn-norte.girado { background: #fdecea; }
+
+/* Panel inferior plegable */
+.tirador {
+  position: sticky; top: -12px; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: calc(100% + 32px); margin: -12px -16px 8px; padding: 6px 16px; min-height: 40px;
+  border: 0; border-bottom: 1px solid var(--borde); background: var(--fondo);
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--suave);
+}
+.tirador .flecha {
+  display: grid; place-items: center; width: 30px; height: 26px; border-radius: 13px;
+  background: var(--fondo-2); color: var(--primario); font-size: 13px; flex: none;
+}
+#resumen-panel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tarjeta { margin: 12px 0; padding: 12px; border: 1px solid var(--borde); border-radius: 12px; background: var(--fondo-2); }
+.tarjeta h3 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+.subtitulo { margin: 24px 0 4px; font-size: 16px; }
+
+@media (max-width: 899px) {
+  .panel-cerrado #mapa { bottom: calc(48px + env(safe-area-inset-bottom)); }
+  .panel-cerrado .panel { top: calc(100% - 48px - env(safe-area-inset-bottom)); overflow: hidden; }
+  .panel-cerrado .tirador { color: var(--texto); font-size: 15px; }
+  .panel-cerrado .flotante { bottom: calc(48px + env(safe-area-inset-bottom) + 12px); }
+}
+@media (min-width: 900px) {
+  .tirador { display: none; }
+}

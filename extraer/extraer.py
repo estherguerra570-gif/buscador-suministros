@@ -157,7 +157,7 @@ def main():
         postes = [i for i in items if i["color"] == COLOR_POSTE and i["t"].isdigit()]
         cuenta = 0
         for it in items:
-            if not re.fullmatch(r"\d{3,6}", it["t"]):
+            if not re.fullmatch(r"\d{1,6}", it["t"]):
                 continue
             if toca_borde(it["bbox"], rect):
                 cortados += 1

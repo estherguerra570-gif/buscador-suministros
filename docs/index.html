@@ -20,8 +20,17 @@
   <main>
     <div id="mapa"></div>
     <button id="btn-ubicacion" class="flotante" title="Mi ubicación" aria-label="Mi ubicación">◎</button>
+    <div class="giro" aria-label="Girar el mapa">
+      <button id="btn-girar-izq" title="Girar a la izquierda" aria-label="Girar a la izquierda">⟲</button>
+      <button id="btn-norte" title="Norte arriba" aria-label="Poner el norte arriba"><span id="aguja">▲</span><small>N</small></button>
+      <button id="btn-girar-der" title="Girar a la derecha" aria-label="Girar a la derecha">⟳</button>
+    </div>
 
     <section id="panel" class="panel">
+      <button id="btn-panel" class="tirador" aria-expanded="true" aria-controls="panel">
+        <span id="flecha-panel" class="flecha">▼</span>
+        <span id="resumen-panel">Ocultar panel</span>
+      </button>
       <!-- Vista: buscar -->
       <div class="vista" data-vista="buscar">
         <form id="form-buscar" class="buscar-fila">
@@ -104,6 +113,7 @@
     <button class="menu-item" data-hoja="usuario">👤 Usuario</button>
     <button class="menu-item" data-hoja="historial">🕘 Búsquedas de hoy <span id="cuenta-historial" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="agregar">＋ Agregar suministro nuevo</button>
+    <button class="menu-item" data-hoja="corregir">📌 Corregir ubicación <span id="cuenta-corregidos" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="mis-puntos">📍 Mis suministros agregados <span id="cuenta-propios" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="ruta">🛵 Crear ruta <span id="contador-ruta" class="cuenta" hidden></span></button>
   </aside>
@@ -119,11 +129,12 @@
 
   <!-- Aviso al elegir un punto en el mapa -->
   <div id="aviso-mapa" class="aviso-mapa" hidden>
-    <span>Toca el mapa donde está el suministro</span>
+    <span id="aviso-texto">Toca el mapa donde está el suministro</span>
     <button id="aviso-cancelar" class="btn">Cancelar</button>
   </div>
 
   <script src="lib/leaflet.js"></script>
+  <script src="lib/leaflet-rotate.js"></script>
   <script src="app.js"></script>
   <script src="menu.js"></script>
 </body>

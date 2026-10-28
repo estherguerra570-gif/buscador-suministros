@@ -5,10 +5,12 @@
 const CLAVE_USUARIO = "usuario";
 const CLAVE_PROPIOS = "suministros-propios";
 const CLAVE_HISTORIAL = "historial-busquedas";
+const CLAVE_CORRECCIONES = "ubicaciones-corregidas";
 const COLOR_NUEVO = "#7b1fa2";
 
 let usuario = leer(CLAVE_USUARIO, "");
 let propios = leer(CLAVE_PROPIOS, []);   // [{n, lat, lng, nota, por, fecha, c: "nuevo"}]
+let correcciones = leer(CLAVE_CORRECCIONES, {}); // {numero: {lat, lng, nota, por, fecha}} hechas en este celular
 
 const hoyISO = () => new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD en hora local
 const horaCorta = (d = new Date()) => d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
@@ -41,6 +43,7 @@ const HOJAS = {
   usuario: hojaUsuario,
   historial: hojaHistorial,
   agregar: () => hojaAgregar(),
+  corregir: () => hojaCorregir(),
   "mis-puntos": hojaMisPuntos,
   ruta: () => { activarVista("ruta"); setTimeout(() => $("#numero-ruta").focus(), 50); },
 };
@@ -53,6 +56,7 @@ function pintarCabeceraMenu() {
   $("#menu-avatar").textContent = usuario ? usuario.trim()[0].toUpperCase() : "?";
   $("#menu-fecha").textContent = new Date().toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
   $("#cuenta-propios").textContent = propios.length || "";
+  $("#cuenta-corregidos").textContent = Object.keys(correcciones).length || "";
   $("#cuenta-historial").textContent = historialDeHoy().length || "";
   $("#saludo").textContent = usuario ? `· ${usuario.split(" ")[0]}` : "";
 }
@@ -134,7 +138,7 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
   const tiene = b.lat != null;
   abrirHoja("Agregar suministro nuevo", `
     <label class="campo">Número de suministro
-      <input id="a-numero" type="text" inputmode="numeric" maxlength="6" value="${escapar(b.n)}" placeholder="3 a 6 cifras">
+      <input id="a-numero" type="text" inputmode="numeric" maxlength="6" value="${escapar(b.n)}" placeholder="1 a 6 cifras">
     </label>
     <label class="campo">Referencia (opcional)
       <textarea id="a-nota" rows="2" placeholder="Ej.: casa verde, portón negro">${escapar(b.nota)}</textarea>
@@ -163,7 +167,13 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
     if (!pos) { $("#a-ubicacion").textContent = "No se pudo obtener la ubicación. Revisa el GPS."; return; }
     hojaAgregar({ ...borrador, lat: pos.lat, lng: pos.lng });
   };
-  $("#a-mapa").onclick = () => { leerFormulario(); elegirEnMapa(); };
+  $("#a-mapa").onclick = () => {
+    leerFormulario();
+    elegirEnMapa({
+      alElegir: (ll) => hojaAgregar({ ...borrador, lat: ll.lat, lng: ll.lng }),
+      alCancelar: () => hojaAgregar(borrador),
+    });
+  };
   $("#a-guardar").onclick = () => {
     leerFormulario();
     const error = validar(borrador);
@@ -185,7 +195,7 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
 }
 
 function validar(b) {
-  if (!/^\d{3,6}$/.test(b.n)) return "El número debe tener de 3 a 6 cifras.";
+  if (!/^\d{1,6}$/.test(b.n)) return "El número debe tener de 1 a 6 cifras.";
   const existe = indice.get(b.n);
   if (existe) return existe.c === "nuevo"
     ? `El ${b.n} ya lo agregaste antes.`
@@ -194,22 +204,179 @@ function validar(b) {
   return null;
 }
 
-function elegirEnMapa() {
+/** Cierra la hoja y espera que se toque un punto del mapa (a pantalla completa). */
+function elegirEnMapa({ alElegir, alCancelar, texto = "Toca el mapa donde está el suministro", centro = null, actual = null }) {
   cerrarHoja();
   activarVista("buscar");
+  plegarPanel(true, "Eligiendo ubicación…");
+  if (centro) mapa.setView([centro.lat, centro.lng], Math.max(mapa.getZoom(), 18));
+  // la ubicación que tiene ahora, para comparar
+  const referencia = actual ? L.circleMarker([actual.lat, actual.lng], {
+    radius: 9, color: "#c62828", weight: 3, fillColor: "#fff", fillOpacity: 0.6, interactive: false,
+  }).bindTooltip("Ubicación actual", { permanent: true, direction: "top", offset: [0, -8] }).addTo(mapa) : null;
   document.body.classList.add("eligiendo");
+  $("#aviso-texto").textContent = texto;
   $("#aviso-mapa").hidden = false;
   const terminar = () => {
     document.body.classList.remove("eligiendo");
     $("#aviso-mapa").hidden = true;
+    referencia?.remove();
     mapa.off("click", alTocar);
   };
-  const alTocar = (e) => {
-    terminar();
-    hojaAgregar({ ...borrador, lat: e.latlng.lat, lng: e.latlng.lng });
-  };
+  const alTocar = (e) => { terminar(); alElegir(e.latlng); };
   mapa.on("click", alTocar);
-  $("#aviso-cancelar").onclick = () => { terminar(); hojaAgregar(borrador); };
+  $("#aviso-cancelar").onclick = () => { terminar(); alCancelar(); };
+}
+
+// ---------- Corregir la ubicación de un suministro existente ----------
+/**
+ * Pone una ubicación nueva a un suministro y guarda la del plano para poder volver a ella.
+ * Las correcciones vienen de data/correcciones.json (para todos) y de este celular (manda la del celular).
+ */
+function moverSuministro(s, c) {
+  if (s.latPlano === undefined) { s.latPlano = s.lat; s.lngPlano = s.lng; s.zonaPlano = claveZona(s.lat, s.lng); }
+  Object.assign(s, { lat: c.lat, lng: c.lng, corregido: c, nodoClave: null, _nodoVersion: undefined });
+}
+function restaurarSuministro(s) {
+  if (s.latPlano === undefined) return;
+  const z = s.zonaPlano;
+  Object.assign(s, { lat: s.latPlano, lng: s.lngPlano, corregido: null, _nodoVersion: undefined });
+  delete s.latPlano; delete s.lngPlano; delete s.zonaPlano;
+  zonas.delete(z); zonasListas.delete(z); // se vuelve a leer su acceso a la calle del plano
+}
+
+let correccionesCompartidas = {};
+async function aplicarCorrecciones() {
+  try {
+    const r = await fetch("data/correcciones.json");
+    if (r.ok) correccionesCompartidas = await r.json();
+  } catch { /* sin señal: quedan solo las del celular */ }
+  for (const [n, c] of Object.entries({ ...correccionesCompartidas, ...correcciones })) {
+    const s = indice.get(n);
+    if (s) moverSuministro(s, c);
+  }
+}
+
+/** Después de mover un punto: se redibuja el mapa, la ruta y el menú. */
+function refrescarTrasMover() {
+  dibujarTodos();
+  pintarRuta();
+  pintarCabeceraMenu();
+}
+
+let edicion = null; // {n, lat, lng, nota} mientras se corrige
+
+function hojaCorregir(n = "", e = null) {
+  edicion = e ?? { n, lat: null, lng: null, nota: "" };
+  const s = edicion.n ? indice.get(edicion.n) : null;
+  const lista = Object.entries(correcciones);
+  const tiene = edicion.lat != null;
+  abrirHoja("Corregir ubicación", `
+    <form id="c-form" class="buscar-fila">
+      <input id="c-numero" type="search" inputmode="numeric" enterkeyhint="search" autocomplete="off" maxlength="6"
+             value="${escapar(edicion.n)}" placeholder="Número de suministro…" aria-label="Número de suministro a corregir">
+      <button type="submit" class="btn primario">Buscar</button>
+    </form>
+    ${edicion.n && !s ? `<p class="nota alerta">No se encontró el suministro ${escapar(edicion.n)}.</p>` : ""}
+    ${s ? `
+      <div class="tarjeta">
+        <h3><span class="punto ${s.c}"></span>${s.n}</h3>
+        <p class="nota">${s.c === "nuevo" ? "Agregado a mano" : `Página ${s.p} del plano`} ·
+          ubicación actual: ${s.lat}, ${s.lng}${s.corregido ? " (ya corregida)" : ""}</p>
+        ${s.latPlano !== undefined ? `<p class="nota">En el plano: ${s.latPlano}, ${s.lngPlano}</p>` : ""}
+      </div>
+      <div class="campo">Nueva ubicación
+        <div class="fila">
+          <button id="c-gps" class="btn">📡 Estoy en el lugar</button>
+          <button id="c-mapa" class="btn">🗺️ Elegir en el mapa</button>
+        </div>
+        <div id="c-ubicacion" class="ubicacion-elegida ${tiene ? "ok" : ""}">
+          ${tiene ? `✓ ${edicion.lat.toFixed(6)}, ${edicion.lng.toFixed(6)} · a ${formatoDist(dist(s, edicion))} de la actual` : "Elige dónde está realmente"}
+        </div>
+      </div>
+      <label class="campo">Referencia (opcional)
+        <textarea id="c-nota" rows="2" placeholder="Ej.: está a la vuelta, puerta azul">${escapar(edicion.nota)}</textarea>
+      </label>
+      <div class="fila">
+        <button id="c-guardar" class="btn primario" ${tiene ? "" : "disabled"}>Guardar nueva ubicación</button>
+        ${correcciones[s.n] ? `<button id="c-restaurar" class="btn">Volver a la del plano</button>` : ""}
+      </div>
+      <p class="nota">El punto se mueve en el mapa, en la búsqueda y en las rutas de este celular.
+        Descarga la lista y envíala para que quede corregido para todos.</p>` : `
+      <p class="nota">Busca el suministro que está mal ubicado en el PDF y marca dónde está realmente.</p>`}
+    <h3 class="subtitulo">Ubicaciones corregidas ${lista.length ? `(${lista.length})` : ""}</h3>
+    ${lista.length ? `
+      <div class="fila"><button id="c-exportar" class="btn">Descargar correcciones (CSV)</button></div>
+      <ul class="lista">${lista.map(([num, c]) => `
+        <li data-n="${num}"><span class="punto ${indice.get(num)?.c ?? ""}"></span><span class="num">${num}</span>
+          <span class="info">${escapar(c.nota) || "sin referencia"}<br>${new Date(c.fecha).toLocaleDateString("es-PE")}${c.por ? " · " + escapar(c.por) : ""}</span>
+        </li>`).join("")}</ul>` : `<p class="vacio">Todavía no corregiste ninguna ubicación.</p>`}`);
+
+  $("#c-form").onsubmit = (ev) => {
+    ev.preventDefault();
+    hojaCorregir($("#c-numero").value.replace(/\D/g, ""));
+  };
+  document.querySelectorAll("#hoja-cuerpo li[data-n]").forEach((li) => { li.onclick = () => hojaCorregir(li.dataset.n); });
+  if (lista.length) $("#c-exportar").onclick = exportarCorrecciones;
+  if (!s) { if (!edicion.n) setTimeout(() => $("#c-numero")?.focus(), 50); return; }
+
+  const leerNota = () => { edicion.nota = $("#c-nota").value.trim(); };
+  $("#c-gps").onclick = async () => {
+    leerNota();
+    $("#c-ubicacion").textContent = "Obteniendo ubicación…";
+    const pos = await obtenerUbicacion().catch(() => null);
+    if (!pos) { $("#c-ubicacion").textContent = "No se pudo obtener la ubicación. Revisa el GPS."; return; }
+    hojaCorregir(s.n, { ...edicion, lat: pos.lat, lng: pos.lng });
+  };
+  $("#c-mapa").onclick = () => {
+    leerNota();
+    elegirEnMapa({
+      texto: `Toca dónde está realmente el ${s.n}`,
+      centro: tiene ? edicion : s,
+      actual: s,
+      alElegir: (ll) => hojaCorregir(s.n, { ...edicion, lat: ll.lat, lng: ll.lng }),
+      alCancelar: () => hojaCorregir(s.n, edicion),
+    });
+  };
+  $("#c-guardar").onclick = () => {
+    leerNota();
+    const c = { lat: +edicion.lat.toFixed(6), lng: +edicion.lng.toFixed(6), nota: edicion.nota, por: usuario, fecha: new Date().toISOString() };
+    if (s.c === "nuevo") {
+      // los agregados a mano se corrigen directamente
+      const p = propios.find((x) => x.n === s.n);
+      if (p) Object.assign(p, { lat: c.lat, lng: c.lng, nota: c.nota || p.nota });
+      guardar(CLAVE_PROPIOS, propios);
+      Object.assign(s, { lat: c.lat, lng: c.lng, nota: c.nota || s.nota, _nodoVersion: undefined });
+    } else {
+      correcciones[s.n] = c;
+      guardar(CLAVE_CORRECCIONES, correcciones);
+      moverSuministro(s, c);
+    }
+    refrescarTrasMover();
+    cerrarHoja();
+    activarVista("buscar");
+    seleccionar(s.n);
+  };
+  if (correcciones[s.n]) $("#c-restaurar").onclick = () => {
+    if (!confirm(`¿Volver a poner el ${s.n} donde lo indica el plano?`)) return;
+    delete correcciones[s.n];
+    guardar(CLAVE_CORRECCIONES, correcciones);
+    restaurarSuministro(s);
+    const compartida = correccionesCompartidas[s.n];
+    if (compartida) moverSuministro(s, compartida);
+    refrescarTrasMover();
+    hojaCorregir(s.n);
+  };
+}
+
+/** CSV de las ubicaciones corregidas, para enviarlo a la oficina y corregirlo para todos. */
+function exportarCorrecciones() {
+  descargarCsv(`ubicaciones-corregidas-${hoyISO()}.csv`,
+    ["suministro", "latitud_nueva", "longitud_nueva", "latitud_plano", "longitud_plano", "referencia", "corregido_por", "fecha"],
+    Object.entries(correcciones).map(([n, c]) => {
+      const s = indice.get(n);
+      return [n, c.lat, c.lng, s?.latPlano ?? "", s?.lngPlano ?? "", c.nota, c.por, new Date(c.fecha).toLocaleString("es-PE")];
+    }));
 }
 
 function hojaMisPuntos() {
@@ -251,12 +418,15 @@ function hojaMisPuntos() {
 
 /** Descarga un CSV (se abre en Excel) para enviar los suministros nuevos a la oficina. */
 function exportarPropios() {
-  const filas = [["suministro", "latitud", "longitud", "referencia", "agregado_por", "fecha"],
-    ...propios.map((p) => [p.n, p.lat, p.lng, p.nota, p.por, new Date(p.fecha).toLocaleString("es-PE")])];
-  const csv = filas.map((f) => f.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+  descargarCsv(`suministros-nuevos-${hoyISO()}.csv`, ["suministro", "latitud", "longitud", "referencia", "agregado_por", "fecha"],
+    propios.map((p) => [p.n, p.lat, p.lng, p.nota, p.por, new Date(p.fecha).toLocaleString("es-PE")]));
+}
+
+function descargarCsv(nombre, cabecera, filas) {
+  const csv = [cabecera, ...filas].map((f) => f.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
-  a.download = `suministros-nuevos-${hoyISO()}.csv`;
+  a.download = nombre;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

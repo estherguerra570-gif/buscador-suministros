@@ -15,6 +15,13 @@ Leyenda usada para filtrar:
 - Poste: número rojo (`#a83800`)
 - Subestación: triángulo (se ignora)
 
+Se toman números de 1 a 6 cifras.
+
+## Ubicaciones corregidas
+Desde el menú (“Corregir ubicación”) se busca un suministro y se marca dónde está realmente (GPS o tocando
+el mapa). Se guarda en el celular y se puede descargar como CSV. Para que una corrección valga para todos,
+se agrega a `docs/data/correcciones.json` con la forma `{"123456": {"lat": -16.39, "lng": -71.53, "nota": ""}}`.
+
 ## Rutas
 - Dentro de la zona del plano: se sigue la red de baja tensión del PDF (líneas azules poste a poste, que van
   por las calles); los tramos sueltos se unen solo si no atraviesan una manzana (`extraer/red.py`).
@@ -26,7 +33,7 @@ Leyenda usada para filtrar:
   de ~1 km: calles, red y postes) y las imágenes `docs/data/planos/pNNN.jpg`
 - `extraer/red.py`: red de calles y contornos de manzanas
 - `extraer/icono.py`: genera los íconos de la app
-- `docs/`: la app (HTML + JS, sin servidor), publicada tal cual por GitHub Pages. Mapa con Leaflet + OpenStreetMap.
+- `docs/`: la app (HTML + JS, sin servidor), publicada tal cual por GitHub Pages. Mapa con Leaflet + OpenStreetMap (giro con leaflet-rotate).
 
 ## Regenerar los datos
 ```

@@ -32,12 +32,16 @@ function guardar(clave, valor) {
 }
 
 // ---------- Mapa ----------
-const mapa = L.map("mapa", { zoomControl: false }).setView([-16.2522, -71.6802], 15);
+// rotate/touchRotate (leaflet-rotate): se gira con dos dedos o con los botones ⟲ ⟳; la brújula vuelve al norte.
+const mapa = L.map("mapa", {
+  zoomControl: false, preferCanvas: true, rotate: true, touchRotate: true, rotateControl: false, bearing: 0,
+  zoomSnap: 0.5, wheelPxPerZoomLevel: 90,
+}).setView([-16.2522, -71.6802], 15);
 L.control.zoom({ position: "topleft" }).addTo(mapa);
-const lienzo = L.canvas({ padding: 0.5 });
+const lienzo = L.canvas({ padding: 0.3, tolerance: 6 }); // tolerance: más fácil tocar un punto con el dedo
 const fondos = {
   "Mapa + calles del plano": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 20, maxNativeZoom: 19,
+    maxZoom: 20, maxNativeZoom: 19, updateWhenZooming: false, keepBuffer: 4,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }),
   "Solo calles del plano": L.layerGroup(),
@@ -65,6 +69,8 @@ const ZOOM_SUMINISTROS = 17;       // desde este zoom se ven los puntos de sumin
 const ZOOM_PLANO = 15;             // desde este zoom se ven manzanas y red
 let ZONA_GRADOS = 0.01;            // se toma de indice.json
 const claveZona = (lat, lng) => `${Math.floor(lat / ZONA_GRADOS)}_${Math.floor(lng / ZONA_GRADOS)}`;
+/** Zona donde está el detalle del suministro (si se corrigió su ubicación, sigue en la zona del plano). */
+const zonaDe = (s) => s.zonaPlano ?? claveZona(s.lat, s.lng);
 let celdasSuministros = new Map(); // zona -> suministros (para dibujar)
 const zonas = new Map();           // zona -> Promise<{m: manzanas, r: tramos de red}>
 const zonasListas = new Set();
@@ -94,7 +100,8 @@ function cargarZona(k) {
       .then((z) => {
         for (const [n, [poste, px, py, nodo]] of Object.entries(z.s)) {
           const s = indice.get(n);
-          if (s) Object.assign(s, { poste, px, py, nodoClave: nodo ? `${nodo[0]},${nodo[1]}` : null });
+          // con la ubicación corregida, el acceso a la calle que trae el plano ya no sirve: se busca el más cercano
+          if (s) Object.assign(s, { poste, px, py, nodoClave: nodo && !s.corregido ? `${nodo[0]},${nodo[1]}` : null });
         }
         const manzanas = z.m.map((m) => { const pts = []; for (let i = 0; i < m.length; i += 2) pts.push([m[i], m[i + 1]]); return pts; });
         const red = z.r.map(([a, b, c, d]) => [[a, b], [c, d]]);
@@ -136,6 +143,34 @@ function zonasEnPantalla() {
   return claves;
 }
 
+// Las capas de cada zona se arman una sola vez y después solo se ponen o se sacan del mapa al moverlo
+// (antes se rehacían todas en cada movimiento, y eso volvía lento el arrastre).
+const capasZona = new Map();  // `${tipo}:${zona}` -> L.LayerGroup (tipo: m manzanas, r red, s suministros)
+function capaDeZona(tipo, k, zd) {
+  const clave = `${tipo}:${k}`;
+  if (!capasZona.has(clave)) {
+    const g = L.layerGroup();
+    if (tipo === "m") for (const pts of zd.m) L.polyline(pts, { renderer: lienzo, color: "#4a4f4c", weight: 1.2, opacity: 0.8, interactive: false }).addTo(g);
+    if (tipo === "r") for (const l of zd.r) L.polyline(l, { renderer: lienzo, color: "#005ce6", weight: 1, opacity: 0.6, interactive: false }).addTo(g);
+    if (tipo === "s") {
+      for (const s of celdasSuministros.get(k) ?? []) {
+        L.circleMarker([s.lat, s.lng], {
+          renderer: lienzo, radius: 3.5, color: "#fff", weight: 0.5, fillColor: colorDe(s), fillOpacity: 0.95,
+        }).on("click", () => seleccionar(s.n)).addTo(g);
+      }
+    }
+    capasZona.set(clave, g);
+  }
+  return capasZona.get(clave);
+}
+
+/** Deja en `capa` exactamente los grupos indicados, sin tocar los que ya estaban. */
+function sincronizar(capa, grupos) {
+  const quiero = new Set(grupos);
+  capa.eachLayer((g) => { if (!quiero.has(g)) capa.removeLayer(g); });
+  for (const g of quiero) if (!capa.hasLayer(g)) capa.addLayer(g);
+}
+
 let versionDibujo = 0;
 async function dibujarVisible() {
   if (!datos) return;
@@ -145,35 +180,36 @@ async function dibujarVisible() {
   const claves = z >= ZOOM_PLANO ? zonasEnPantalla() : [];
   const detalle = claves.length <= 30 ? await Promise.all(claves.map(cargarZona)) : [];
   if (version !== versionDibujo) return; // el mapa se movió mientras se descargaba
-  capaTodos.clearLayers();
-  capaManzanas.clearLayers();
-  capaRedBT.clearLayers();
-  for (const zd of detalle) {
-    for (const pts of zd.m) L.polyline(pts, { renderer: lienzo, color: "#4a4f4c", weight: 1.2, opacity: 0.8, interactive: false }).addTo(capaManzanas);
-    if (mapa.hasLayer(capaRedBT)) {
-      for (const l of zd.r) L.polyline(l, { renderer: lienzo, color: "#005ce6", weight: 1, opacity: 0.6, interactive: false }).addTo(capaRedBT);
-    }
-  }
-  if (z >= ZOOM_SUMINISTROS) {
-    const b = mapa.getBounds().pad(0.2);
-    for (const k of claves) {
-      for (const s of celdasSuministros.get(k) ?? []) {
-        if (!b.contains([s.lat, s.lng])) continue;
-        L.circleMarker([s.lat, s.lng], {
-          renderer: lienzo, radius: 3, color: "#fff", weight: 0.5, fillColor: colorDe(s), fillOpacity: 0.95,
-        }).on("click", () => seleccionar(s.n)).addTo(capaTodos);
-      }
-    }
-  }
+  const visibles = claves.slice(0, detalle.length);
+  sincronizar(capaManzanas, visibles.map((k, i) => capaDeZona("m", k, detalle[i])));
+  sincronizar(capaRedBT, mapa.hasLayer(capaRedBT) ? visibles.map((k, i) => capaDeZona("r", k, detalle[i])) : []);
+  sincronizar(capaTodos, z >= ZOOM_SUMINISTROS ? visibles.map((k) => capaDeZona("s", k)) : []);
 }
 mapa.on("moveend", dibujarVisible);
 mapa.on("overlayadd", dibujarVisible);
+let esperaGiro;
+mapa.on("rotate", () => {
+  $("#aguja").style.transform = `rotate(${mapa.getBearing()}deg)`;
+  $("#btn-norte").classList.toggle("girado", Math.round(mapa.getBearing()) % 360 !== 0);
+  clearTimeout(esperaGiro);
+  esperaGiro = setTimeout(dibujarVisible, 250); // al girar entran zonas nuevas por las esquinas
+});
 
-/** Vuelve a indexar y pintar los suministros (por ejemplo, tras agregar uno a mano). */
+/** Vuelve a indexar y pintar los suministros (por ejemplo, tras agregar uno a mano o corregir su ubicación). */
 function dibujarTodos() {
   indexarSuministros();
+  for (const [clave, g] of capasZona) if (clave.startsWith("s:")) { capaTodos.removeLayer(g); capasZona.delete(clave); }
   dibujarVisible();
 }
+
+// ---------- Girar el mapa ----------
+const PASO_GIRO = 30;
+function girar(grados) {
+  mapa.setBearing(mapa.getBearing() + grados);
+}
+$("#btn-girar-izq").onclick = () => girar(-PASO_GIRO);
+$("#btn-girar-der").onclick = () => girar(PASO_GIRO);
+$("#btn-norte").onclick = () => mapa.setBearing(0);
 
 // ---------- Red de calles del plano (rutas): crece a medida que se descargan zonas ----------
 grafo = { n: [], ady: [], clave: new Map() };
@@ -314,6 +350,7 @@ async function cargarDatos() {
     `${suministros.length.toLocaleString("es-PE")} suministros cargados (${datos.paginas.length} páginas del plano). ` +
     `Acerca el mapa para ver los puntos.`;
   incorporarPropios(); // suministros agregados a mano (menu.js)
+  await aplicarCorrecciones(); // ubicaciones corregidas (menu.js)
   dibujarHojas();
   indexarSuministros();
   const b = L.latLngBounds(datos.paginas.flatMap((p) => [[p.sur, p.oeste], [p.norte, p.este]]));
@@ -379,6 +416,7 @@ function seleccionar(n) {
   $("#resultados").innerHTML = "";
   if (marcadorSeleccion) marcadorSeleccion.remove();
   marcadorSeleccion = L.marker([s.lat, s.lng]).addTo(mapa).bindTooltip(s.n, { permanent: true, direction: "top", offset: [-15, -12] });
+  plegarPanel(true, s.n); // la ficha baja sola para ver el mapa completo; se vuelve a ver con la flechita
   mapa.setView([s.lat, s.lng], 18);
 
   registrarBusqueda(n);
@@ -396,16 +434,22 @@ function seleccionar(n) {
         : `<dt>Página</dt><dd>${s.p}</dd>
            <dt>Poste cercano</dt><dd id="f-poste">${s.poste !== undefined ? s.poste ?? "—" : "…"}</dd>`}
       <dt>GPS</dt><dd>${s.lat}, ${s.lng}</dd>
+      ${s.corregido ? `<dt>Ubicación</dt><dd>Corregida${s.corregido.por ? " por " + escapar(s.corregido.por) : ""}${s.corregido.fecha ? " el " + new Date(s.corregido.fecha).toLocaleDateString("es-PE") : ""} (en el plano: ${s.latPlano}, ${s.lngPlano})</dd>
+           ${s.corregido.nota ? `<dt>Referencia</dt><dd>${escapar(s.corregido.nota)}</dd>` : ""}` : ""}
     </dl>
-    ${propio ? "" : `<div class="fila"><button class="btn" id="f-plano">Ver en el plano</button></div>`}
+    <div class="fila">
+      ${propio ? "" : `<button class="btn" id="f-plano">Ver en el plano</button>`}
+      <button class="btn" id="f-corregir">📌 Corregir ubicación</button>
+    </div>
     ${enRuta ? `<p class="nota">✓ Está en tu ruta (parada ${ruta.indexOf(s.n) + 1}).</p>` : ""}
     <div class="fila">
       <a class="btn navegar" style="margin:0" href="${urlIr(s)}" target="_blank" rel="noopener">Ir con Google Maps</a>
     </div>`;
   if (!propio) $("#f-plano").onclick = () => abrirPlano(s);
+  $("#f-corregir").onclick = () => hojaCorregir(s.n);
   trazarCamino(s);
   if (!propio && s.poste === undefined) {
-    cargarZona(claveZona(s.lat, s.lng)).then(() => {
+    cargarZona(zonaDe(s)).then(() => {
       if (seleccionActual === s.n && $("#f-poste")) $("#f-poste").textContent = s.poste === undefined ? "sin señal" : s.poste ?? "—";
     });
   }
@@ -443,7 +487,9 @@ async function trazarCamino(s) {
   L.circleMarker([yo.lat, yo.lng], { radius: 7, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 })
     .bindTooltip("Tú").addTo(capaCamino);
   mapa.fitBounds(L.latLngBounds(latlngs).extend([s.lat, s.lng]), { padding: [40, 40], maxZoom: 18 });
-  texto(`${formatoDist(metros)} · ${formatoTiempo(segundos)} en moto` + (porCalle ? "" : " (línea recta, sin conexión)"));
+  const resumen = `${formatoDist(metros)} · ${formatoTiempo(segundos)} en moto`;
+  texto(resumen + (porCalle ? "" : " (línea recta, sin conexión)"));
+  textoPanel(`${s.n} · ${resumen}`);
 }
 
 // ---------- Google Maps ----------
@@ -667,7 +713,7 @@ $("#form-agregar-ruta").addEventListener("submit", (e) => {
 });
 
 $("#btn-cargar").onclick = () => {
-  const numeros = [...new Set($("#lista-pegada").value.match(/\d{3,6}/g) ?? [])];
+  const numeros = [...new Set($("#lista-pegada").value.match(/\d{1,6}/g) ?? [])];
   const faltan = agregarARuta(numeros);
   avisoFaltan(faltan);
   if (!faltan.length) {
@@ -735,6 +781,7 @@ async function optimizarRuta({ manual = false } = {}) {
   guardar(CLAVE_RUTA, ruta);
   guardar(CLAVE_INICIO, inicioRuta);
   pintarRuta();
+  if (manual) plegarPanel(true, `Ruta: ${plural(ruta.filter((n) => !visitados.has(n)).length, "pendiente")}`);
   encuadrarRuta();
   btn.disabled = false;
   btn.textContent = "↻ Recalcular desde aquí";
@@ -798,11 +845,11 @@ $("#btn-ubicacion").onclick = () => {
 let visor = null;
 async function abrirPlano(s) {
   const pg = paginas.get(s.p);
-  if (s.px === undefined) await cargarZona(claveZona(s.lat, s.lng));
+  if (s.px === undefined) await cargarZona(zonaDe(s));
   $("#visor").hidden = false;
   $("#visor-titulo").textContent = `Suministro ${s.n} · página ${s.p}`;
   if (visor) visor.remove();
-  visor = L.map("visor-mapa", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4, zoomSnap: 0.25 });
+  visor = L.map("visor-mapa", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4, zoomSnap: 0.25, rotateControl: false });
   const limites = [[0, 0], [pg.alto, pg.ancho]];
   L.imageOverlay(pg.plano, limites).addTo(visor);
   visor.setMaxBounds(L.latLngBounds(limites).pad(0.2));
@@ -815,20 +862,50 @@ $("#visor-cerrar").onclick = () => { $("#visor").hidden = true; };
 // ---------- Vistas: "buscar" (inicio) y "ruta" (Crear ruta, desde el menú) ----------
 function activarVista(nombre) {
   document.querySelectorAll(".vista").forEach((v) => { v.hidden = v.dataset.vista !== nombre; });
+  plegarPanel(false);
   capaRuta[nombre === "ruta" ? "addTo" : "remove"](mapa);
   capaCamino[nombre === "buscar" ? "addTo" : "remove"](mapa);
   if (marcadorSeleccion) marcadorSeleccion[nombre === "buscar" ? "addTo" : "remove"](mapa);
   if (nombre === "ruta" && ruta.length) encuadrarRuta();
 }
 
+// ---------- Panel inferior: se pliega para ver el mapa a pantalla completa ----------
+let textoPlegado = "";
+function textoPanel(t) {
+  textoPlegado = t;
+  if (document.body.classList.contains("panel-cerrado")) $("#resumen-panel").textContent = t;
+}
+function plegarPanel(cerrar, texto) {
+  if (texto !== undefined) textoPlegado = texto;
+  const body = document.body;
+  if (body.classList.contains("panel-cerrado") === cerrar) {
+    if (cerrar) $("#resumen-panel").textContent = textoPlegado || "Ver panel";
+    return;
+  }
+  // se conserva el punto del mapa que queda al centro de la parte visible
+  const centro = mapa.getCenter();
+  body.classList.toggle("panel-cerrado", cerrar);
+  if (cerrar) $("#panel").scrollTop = 0;
+  $("#flecha-panel").textContent = cerrar ? "▲" : "▼";
+  $("#resumen-panel").textContent = cerrar ? (textoPlegado || "Ver panel") : "Ocultar panel";
+  $("#btn-panel").setAttribute("aria-expanded", String(!cerrar));
+  mapa.invalidateSize({ pan: false });
+  mapa.setView(centro, mapa.getZoom(), { animate: false });
+}
+$("#btn-panel").onclick = () => plegarPanel(!document.body.classList.contains("panel-cerrado"));
+// al arrastrar el mapa con la ficha abierta, el panel baja solo
+mapa.on("dragstart", () => { if (seleccionActual && !$("#ficha").hidden && $("#ficha").offsetParent) plegarPanel(true); });
+
 // Mientras se escribe solo se sugieren números; el suministro se abre con "Buscar".
 let espera;
+$("#buscador").addEventListener("focus", () => plegarPanel(false));
 $("#buscador").addEventListener("input", (e) => {
   clearTimeout(espera);
   if (e.target.value.replace(/\D/g, "") !== seleccionActual) {
     $("#ficha").hidden = true;
     seleccionActual = null;
     capaCamino.clearLayers();
+    textoPlegado = "";
   }
   espera = setTimeout(() => buscar(e.target.value), 120);
 });
