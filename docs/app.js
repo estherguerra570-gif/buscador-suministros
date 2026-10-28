@@ -439,7 +439,7 @@ function seleccionar(n) {
 
 // ---------- Recorrido en vivo hasta el suministro (como Google Maps) ----------
 // Mientras la ficha está abierta se sigue el GPS: la ruta se recalcula al avanzar o al salirse del camino,
-// y se muestran hasta 3 caminos por calles de OpenStreetMap, siempre con el más corto primero.
+// y se muestran hasta 3 caminos (de OpenStreetMap y de la red del plano), siempre con el más corto primero.
 const RECALCULAR_METROS = 40;     // recalcula al moverse esta distancia desde el último cálculo
 const FUERA_DE_RUTA_METROS = 35;  // o antes, si se aleja así de la ruta elegida
 const LLEGADA_METROS = 25;
@@ -496,9 +496,10 @@ function alMoverme(p) {
 }
 
 /**
- * Las calles de OpenStreetMap mandan: la red del plano es el cableado eléctrico y da caminos mucho más largos,
- * así que solo se usa sin internet. Entre consulta y consulta a OSRM, las rutas ya traídas se recortan
- * desde donde estoy; al salirse del camino o cada 15 s se piden de nuevo (puede aparecer una más corta).
+ * Compiten los caminos de OpenStreetMap y los de la red del plano (que conoce calles que OSM no tiene);
+ * se ordenan por largo y las que pasen de 1,6 veces la más corta se descartan. Entre consulta y consulta
+ * a OSRM, sus rutas ya traídas se recortan desde donde estoy; al salirse del camino o cada 15 s se piden
+ * de nuevo (puede aparecer una más corta).
  */
 async function recalcular(yo, fuera = false) {
   const n = nav;
@@ -516,10 +517,9 @@ async function recalcular(yo, fuera = false) {
     if (!candidatas.length && n.osm) {
       candidatas = n.osm.filter((r) => distanciaALinea(yo, r.puntos) <= FUERA_DE_RUTA_METROS).map((r) => recortar(r, yo));
     }
-    if (!candidatas.length) {
-      await asegurarZonas([n.s, dist(yo, n.s) < 5000 ? yo : null]);
-      candidatas = rutasPorPlano(yo, n.s);
-    }
+    // el plano conoce calles que OpenStreetMap no tiene: sus caminos compiten y gana el más corto
+    await asegurarZonas([n.s, dist(yo, n.s) < 5000 ? yo : null]);
+    candidatas = candidatas.concat(rutasPorPlano(yo, n.s));
     if (nav !== n) return;
     if (!candidatas.length) {
       const metros = dist(yo, n.s) * PENALIDAD_RECTA;
@@ -551,7 +551,7 @@ function recortar(r, yo) {
   return { ...r, puntos, metros, segundos: r.segundos * (metros / r.metros) };
 }
 
-/** Hasta 3 caminos por la red del plano (sin internet): el más corto y desvíos que se le parezcan poco. */
+/** Hasta 3 caminos por la red del plano: el más corto y desvíos que se le parezcan poco. */
 function rutasPorPlano(a, b) {
   const na = nodoCercano(a, 150), nb = nodoDe(b);
   if (na == null || nb == null) return [];

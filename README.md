@@ -23,8 +23,9 @@ el mapa). Se guarda en el celular y se puede descargar como CSV. Para que una co
 se agrega a `docs/data/correcciones.json` con la forma `{"123456": {"lat": -16.39, "lng": -71.53, "nota": ""}}`.
 
 ## Rutas
-- Hasta un suministro buscado: en vivo con el GPS, por calles de OpenStreetMap (OSRM con alternativas, la más
-  corta primero). Se recalcula al avanzar 40 m o al salirse 35 m del camino; la red del plano solo sin internet.
+- Hasta un suministro buscado: en vivo con el GPS. Compiten las calles de OpenStreetMap (OSRM con alternativas)
+  y la red del plano (tiene calles que OSM no conoce); gana la más corta. Se recalcula al avanzar 40 m o al
+  salirse 35 m del camino.
 - Dentro de la zona del plano: se sigue la red de baja tensión del PDF (líneas azules poste a poste, que van
   por las calles); los tramos sueltos se unen solo si no atraviesan una manzana (`extraer/red.py`).
 - Fuera del plano: calles de OpenStreetMap vía OSRM (servicio público gratuito).

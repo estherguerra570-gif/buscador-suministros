@@ -1,6 +1,6 @@
 // Guarda la app y los datos en el celular para que la búsqueda funcione sin señal.
 // Subir VERSION cada vez que se actualicen los datos o el código.
-const VERSION = "v17";
+const VERSION = "v18";
 const CACHE_PLANOS = "planos-v1"; // imágenes de páginas del plano: se guardan a medida que se abren
 const ARCHIVOS = [
   "./", "index.html", "styles.css", "app.js", "menu.js", "gestos.js", "manifest.json",
