@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *.pdf
+
+supabase/.env
+supabase/.temp/

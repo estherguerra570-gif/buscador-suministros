@@ -286,3 +286,32 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
 }
 .aviso.mal { background: #8a4b00; }
 .aviso-envio { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #e3f2e8; color: var(--primario); font-weight: 600; }
+
+/* Entrada con Google */
+.entrada {
+  position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 24px 16px;
+  background: linear-gradient(160deg, #1f6f43, #14492c);
+}
+.entrada-caja {
+  width: min(380px, 100%); padding: 28px 22px; border-radius: 18px; background: #fff; text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,.3);
+}
+.entrada-icono { width: 72px; height: 72px; border-radius: 16px; }
+.entrada h2 { margin: 12px 0 8px; font-size: 22px; }
+.entrada p { color: var(--suave); font-size: 15px; margin: 0 0 18px; }
+.btn-google {
+  display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px;
+  border: 1px solid #dadce0; border-radius: 12px; background: #fff; color: #3c4043;
+  font: inherit; font-size: 16px; font-weight: 600;
+}
+.btn-google svg { width: 22px; height: 22px; }
+.btn-google:active { transform: scale(.98); }
+.btn-google:disabled { opacity: .6; }
+
+/* Perfil y panel de la administradora */
+.avatar img, .foto-perfil, .foto-lista { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.foto-perfil { width: 56px; height: 56px; flex: none; }
+.foto-lista { width: 36px; height: 36px; flex: none; }
+.avatar.chico { width: 36px; height: 36px; font-size: 15px; background: var(--fondo-2); }
+.tarjeta.perfil { display: flex; align-items: center; gap: 12px; }
+.lista .info .texto { color: var(--texto); font-size: 15px; }

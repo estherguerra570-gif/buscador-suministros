@@ -1,0 +1,16 @@
+# Configuración del proyecto de Supabase (solo lo que se sube con `supabase config push`).
+# Los secretos van en supabase/.env, que no se sube a GitHub.
+project_id = "buscador-suministros"
+
+[auth]
+enable_signup = true
+site_url = "https://buscador-suministros.vercel.app/"
+additional_redirect_urls = [
+  "https://buscador-suministros.vercel.app/**",
+  "https://estherguerra570-gif.github.io/buscador-suministros/**",
+  "http://127.0.0.1:8765/**",
+]
+
+# Solo se entra con Google: nadie puede registrarse con correo y contraseña
+[auth.email]
+enable_signup = false

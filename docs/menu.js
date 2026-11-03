@@ -1,19 +1,18 @@
 "use strict";
 // Menú de la esquina: usuario, suministros agregados a mano y búsquedas del día.
-// Se guarda en el propio celular (localStorage), salvo las ubicaciones corregidas, que van al sistema para todos.
-// Usa las funciones y variables globales de app.js.
+// Se guarda en el propio celular (localStorage), salvo las ubicaciones corregidas, que van al sistema (Supabase)
+// para todos. Usa las funciones y variables globales de app.js y sesion.js.
 
 const CLAVE_USUARIO = "usuario";
 const CLAVE_PROPIOS = "suministros-propios";
 const CLAVE_HISTORIAL = "historial-busquedas";
 const CLAVE_CORRECCIONES = "ubicaciones-corregidas"; // pendientes de enviar al sistema
-const CLAVE_EQUIPO = "clave-equipo";
+const CLAVE_SISTEMA = "correcciones-sistema"; // copia de las del sistema para abrir sin señal
 const COLOR_NUEVO = "#7b1fa2";
 
 let usuario = leer(CLAVE_USUARIO, "");
 let propios = leer(CLAVE_PROPIOS, []);   // [{n, lat, lng, nota, por, fecha, c: "nuevo"}]
 let pendientes = leer(CLAVE_CORRECCIONES, {}); // {numero: {lat, lng, nota, por, fecha} | {borrar: true}} sin enviar aún
-let claveEquipo = leer(CLAVE_EQUIPO, "");
 
 const hoyISO = () => new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD en hora local
 const horaCorta = (d = new Date()) => d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
@@ -47,6 +46,7 @@ const HOJAS = {
   historial: hojaHistorial,
   agregar: () => hojaAgregar(),
   corregir: () => hojaCorregir(),
+  admin: hojaAdmin,
   "mis-puntos": hojaMisPuntos,
   ruta: () => { activarVista("ruta"); setTimeout(() => $("#numero-ruta").focus(), 50); },
 };
@@ -56,7 +56,8 @@ document.querySelectorAll(".menu-item").forEach((b) => {
 
 function pintarCabeceraMenu() {
   $("#menu-nombre").textContent = usuario || "Sin nombre";
-  $("#menu-avatar").textContent = usuario ? usuario.trim()[0].toUpperCase() : "?";
+  const foto = usuarioActual?.foto;
+  $("#menu-avatar").innerHTML = foto ? `<img src="${escapar(foto)}" alt="" referrerpolicy="no-referrer">` : escapar(usuario ? usuario.trim()[0].toUpperCase() : "?");
   $("#menu-fecha").textContent = new Date().toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
   $("#cuenta-propios").textContent = propios.length || "";
   const sinEnviar = Object.keys(pendientes).length;
@@ -65,30 +66,68 @@ function pintarCabeceraMenu() {
   $("#saludo").textContent = usuario ? `· ${usuario.split(" ")[0]}` : "";
 }
 
-// ---------- Usuario ----------
+// ---------- Usuario (cuenta de Google) ----------
+/** Lo llama sesion.js al entrar (o este archivo al cargar, si ya había sesión). */
+function alEntrar() {
+  usuario = usuarioActual.nombre;
+  guardar(CLAVE_USUARIO, usuario);
+  $("#menu-admin").hidden = !usuarioActual.admin;
+  pintarCabeceraMenu();
+  if (Object.keys(pendientes).length) sincronizarPendientes(); // correcciones que quedaron sin enviar
+}
+
 function hojaUsuario() {
-  abrirHoja("Usuario", `
-    <label class="campo">Nombre de quien usa la app
-      <input id="u-nombre" type="text" autocomplete="name" maxlength="60" value="${escapar(usuario)}" placeholder="Ej.: Celina Guerra">
-    </label>
-    <p class="nota">Se usa para identificar quién agregó o corrigió cada suministro.</p>
-    <label class="campo">Clave del equipo
-      <input id="u-clave" type="password" autocomplete="off" maxlength="60" value="${escapar(claveEquipo)}" placeholder="La entrega la oficina">
-    </label>
-    <p class="nota">Hace falta para corregir ubicaciones para todos los usuarios.</p>
-    <div class="fila"><button id="u-guardar" class="btn primario">Guardar</button></div>`);
-  $("#u-guardar").onclick = async () => {
-    usuario = $("#u-nombre").value.trim();
-    claveEquipo = $("#u-clave").value.trim();
-    guardar(CLAVE_USUARIO, usuario);
-    guardar(CLAVE_EQUIPO, claveEquipo);
-    pintarCabeceraMenu();
+  const u = usuarioActual;
+  abrirHoja("Usuario", u ? `
+    <div class="tarjeta perfil">
+      ${u.foto ? `<img class="foto-perfil" src="${escapar(u.foto)}" alt="" referrerpolicy="no-referrer">` : `<div class="avatar">${escapar(u.nombre.trim()[0]?.toUpperCase() ?? "?")}</div>`}
+      <div><strong>${escapar(u.nombre)}</strong><div class="nota">${escapar(u.email)}${u.admin ? " · administradora" : ""}</div></div>
+    </div>
+    <p class="nota">Entraste con tu cuenta de Google. Tu nombre queda en cada ubicación que corrijas.</p>
+    <div class="fila"><button id="u-salir" class="btn">Cerrar sesión</button></div>` : `<p class="vacio">No iniciaste sesión.</p>`);
+  if (u) $("#u-salir").onclick = () => {
+    if (!confirm("¿Cerrar sesión en este celular?")) return;
     cerrarHoja();
-    if (Object.keys(pendientes).length) {
-      const problema = await sincronizarPendientes();
-      avisar(problema ? `Correcciones sin enviar: ${problema.error}.` : "✓ Correcciones pendientes enviadas a todos.", !problema);
-    }
+    cerrarSesion();
   };
+}
+
+// ---------- Panel de la administradora: quién usa la app y qué corrigió ----------
+const haceCuanto = (fecha) => {
+  const min = Math.round((Date.now() - new Date(fecha)) / 60000);
+  if (min < 2) return "ahora";
+  if (min < 60) return `hace ${min} min`;
+  if (min < 60 * 24) return `hace ${Math.round(min / 60)} h`;
+  return new Date(fecha).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" });
+};
+
+async function hojaAdmin() {
+  abrirHoja("Usuarios y actividad", `<p class="vacio">Cargando…</p>`);
+  const [perf, hist] = await Promise.all([
+    supa.from("perfiles").select("*").order("ultimo_acceso", { ascending: false }),
+    supa.from("historial_correcciones").select("*").order("fecha", { ascending: false }).limit(300),
+  ]);
+  if (perf.error || hist.error) {
+    abrirHoja("Usuarios y actividad", `<p class="nota alerta">No se pudo cargar: ${escapar((perf.error ?? hist.error).message)}. Revisa la conexión.</p>`);
+    return;
+  }
+  const hechas = new Map();
+  for (const h of hist.data) if (h.accion === "corregir") hechas.set(h.usuario_id, (hechas.get(h.usuario_id) ?? 0) + 1);
+  const foto = (p) => (p.foto ? `<img class="foto-lista" src="${escapar(p.foto)}" alt="" referrerpolicy="no-referrer">` : `<span class="avatar chico">${escapar((p.nombre ?? "?").trim()[0]?.toUpperCase() ?? "?")}</span>`);
+  const movida = (h) => (h.lat_antes != null && h.lat != null ? ` · ${formatoDist(dist({ lat: h.lat_antes, lng: h.lng_antes }, h))}` : "");
+  abrirHoja("Usuarios y actividad", `
+    <h3 class="subtitulo">Usuarios (${perf.data.length})</h3>
+    <ul class="lista">${perf.data.map((p) => `
+      <li>${foto(p)}<span class="info"><strong class="texto">${escapar(p.nombre)}</strong><br>${escapar(p.email)}<br>
+        Último acceso: ${haceCuanto(p.ultimo_acceso)} · entró ${p.accesos} ${p.accesos === 1 ? "vez" : "veces"} ·
+        ${plural(hechas.get(p.id) ?? 0, "corrección")}</span></li>`).join("")}</ul>
+    <h3 class="subtitulo">Últimas correcciones</h3>
+    ${hist.data.length ? `<ul class="lista">${hist.data.map((h) => `
+      <li data-n="${escapar(h.numero)}"><span class="num">${escapar(h.numero)}</span>
+        <span class="info">${h.accion === "corregir" ? "📌 Corregido" : "↩︎ Vuelto al plano"} por ${escapar(h.usuario_nombre ?? "—")}${movida(h)}<br>
+        ${haceCuanto(h.fecha)}${h.nota ? " · " + escapar(h.nota) : ""}</span></li>`).join("")}</ul>`
+      : `<p class="vacio">Todavía nadie corrigió una ubicación.</p>`}`);
+  document.querySelectorAll("#hoja-cuerpo li[data-n]").forEach((li) => { li.onclick = () => hojaCorregir(li.dataset.n); });
 }
 
 // ---------- Búsquedas del día ----------
@@ -242,12 +281,9 @@ function elegirEnMapa({ alElegir, alCancelar, texto = "Toca el mapa donde está 
 }
 
 // ---------- Corregir la ubicación de un suministro (para todos los usuarios) ----------
-// Las correcciones se guardan en el sistema (api/correcciones en Vercel, que las escribe en
-// docs/data/correcciones.json del repositorio) y todos los celulares las aplican al abrir la app.
-// Sin señal o sin clave quedan "pendientes" en este celular y se envían solas en cuanto se pueda.
-const API_CORRECCIONES = location.hostname.endsWith("vercel.app")
-  ? "/api/correcciones"
-  : "https://buscador-suministros.vercel.app/api/correcciones";
+// Las correcciones se guardan en el sistema (tabla "correcciones" de Supabase, que además anota cada cambio en
+// un historial) y todos los celulares las aplican al abrir la app y al instante mientras está abierta.
+// Sin señal o sin sesión quedan "pendientes" en este celular y se envían solas en cuanto se pueda.
 
 let compartidas = {};   // las del sistema: {numero: {lat, lng, nota, por, fecha}}
 const movidos = new Set(); // números que hoy están movidos en el mapa
@@ -290,20 +326,37 @@ function aplicarTodas() {
 }
 
 async function descargarCompartidas() {
-  for (const url of [API_CORRECCIONES, "data/correcciones.json"]) {
-    try {
-      const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout?.(5000) }); // con mala señal no frena la app
-      if (r.ok) { compartidas = await r.json(); return true; }
-    } catch { /* se prueba con la siguiente */ }
-  }
-  return false;
+  await sesionLista;
+  const { data, error } = await supa.from("correcciones").select("numero, lat, lng, nota, usuario_nombre, fecha");
+  if (error) { compartidas = leer(CLAVE_SISTEMA, {}); return false; } // sin señal: la última copia
+  compartidas = Object.fromEntries(data.map(aCorreccion));
+  guardar(CLAVE_SISTEMA, compartidas);
+  return true;
 }
+const aCorreccion = (f) => [f.numero, { lat: f.lat, lng: f.lng, nota: f.nota, por: f.usuario_nombre ?? "", fecha: f.fecha }];
 
 /** Al cargar la app (app.js). */
 async function aplicarCorrecciones() {
-  await descargarCompartidas();
+  compartidas = leer(CLAVE_SISTEMA, {}); // primero la copia guardada: el mapa no espera a la red
   aplicarTodas();
-  sincronizarPendientes();
+  sesionLista.then(async () => {
+    if (await descargarCompartidas()) { aplicarTodas(); refrescarTrasMover(); }
+    sincronizarPendientes();
+    escucharCambios();
+  });
+}
+
+/** Tiempo real: cuando otro usuario corrige o restaura, el punto se mueve aquí sin recargar. */
+function escucharCambios() {
+  supa.channel("correcciones")
+    .on("postgres_changes", { event: "*", schema: "public", table: "correcciones" }, ({ eventType, new: nueva, old }) => {
+      if (eventType === "DELETE") delete compartidas[old.numero];
+      else { const [n, c] = aCorreccion(nueva); compartidas[n] = c; }
+      guardar(CLAVE_SISTEMA, compartidas);
+      aplicarTodas();
+      refrescarTrasMover();
+    })
+    .subscribe();
 }
 
 /** Al volver a la app se traen las correcciones que hicieron los demás. */
@@ -315,17 +368,15 @@ document.addEventListener("visibilitychange", async () => {
 
 /** Envía al sistema una corrección (c) o el regreso a la ubicación del plano (c = null). */
 async function enviarCorreccion(n, c) {
-  try {
-    const r = await fetch(API_CORRECCIONES, {
-      method: c ? "POST" : "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clave: claveEquipo, n, por: usuario, ...(c ? { lat: c.lat, lng: c.lng, nota: c.nota } : {}) }),
-    });
-    const j = await r.json().catch(() => ({}));
-    return r.ok ? { ok: true, correccion: j.correccion } : { ok: false, codigo: r.status, error: j.error || `Error ${r.status}` };
-  } catch {
-    return { ok: false, codigo: 0, error: "Sin conexión" };
-  }
+  if (!usuarioActual?.id) return { ok: false, codigo: 401, error: "Falta iniciar sesión" };
+  const { data, error } = c
+    ? await supa.from("correcciones").upsert({ numero: n, lat: c.lat, lng: c.lng, nota: c.nota ?? "" })
+      .select("numero, lat, lng, nota, usuario_nombre, fecha").single()
+    : await supa.from("correcciones").delete().eq("numero", n);
+  if (!error) return { ok: true, correccion: c ? aCorreccion(data)[1] : null };
+  if (["23514", "22P02", "23502"].includes(error.code)) return { ok: false, codigo: 400, error: "La ubicación o el número no son válidos" };
+  if (error.code === "42501" || error.code?.startsWith("PGRST3")) return { ok: false, codigo: 401, error: "La sesión venció: vuelve a entrar" };
+  return { ok: false, codigo: 0, error: "Sin conexión" };
 }
 
 let colaEnvios = Promise.resolve();
@@ -339,9 +390,9 @@ function sincronizarPendientes() {
   return envio;
 }
 async function enviarPendientes() {
-  let problema = null;
+  let problema = null, enviadas = 0;
   for (const [n, p] of Object.entries(pendientes)) {
-    if (!claveEquipo) { problema = { codigo: 401, error: "Falta la clave del equipo" }; break; }
+    if (!usuarioActual?.id) { problema = { codigo: 401, error: "Falta iniciar sesión" }; break; }
     const r = await enviarCorreccion(n, p.borrar ? null : p);
     if (!r.ok) {
       problema = r;
@@ -350,7 +401,10 @@ async function enviarPendientes() {
     }
     if (p.borrar) delete compartidas[n]; else compartidas[n] = r.correccion ?? p;
     delete pendientes[n];
+    enviadas++;
   }
+  if (enviadas && !problema) avisar(`✓ ${plural(enviadas, "corrección")} enviada${enviadas === 1 ? "" : "s"} a todos.`);
+  guardar(CLAVE_SISTEMA, compartidas);
   guardar(CLAVE_CORRECCIONES, pendientes);
   pintarCabeceraMenu();
   return problema;
@@ -358,7 +412,7 @@ async function enviarPendientes() {
 
 function mensajeEnvio(problema, n) {
   if (!problema) return `✓ Suministro ${n} corregido para todos.`;
-  if (problema.codigo === 401) return `Guardado en este celular. ${problema.error}: ponla en el menú → Usuario y se enviará sola.`;
+  if (problema.codigo === 401) return `Guardado en este celular. ${problema.error} y se enviará solo.`;
   if (problema.codigo === 400) return `No se pudo corregir: ${problema.error}.`;
   return `Guardado en este celular (${problema.error}). Se enviará a todos cuando haya conexión.`;
 }
@@ -547,3 +601,5 @@ function descargarCsv(nombre, cabecera, filas) {
 }
 
 pintarCabeceraMenu();
+
+if (usuarioActual) alEntrar(); // la sesión se resolvió antes de que cargara este archivo
