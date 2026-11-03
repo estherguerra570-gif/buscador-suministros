@@ -14,3 +14,10 @@ additional_redirect_urls = [
 # Solo se entra con Google: nadie puede registrarse con correo y contraseña
 [auth.email]
 enable_signup = false
+
+# Entrar con Google (credencial de console.cloud.google.com; los valores están en supabase/.env)
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+skip_nonce_check = false
