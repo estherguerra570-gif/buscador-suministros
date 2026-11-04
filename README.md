@@ -57,7 +57,7 @@ el mapa). La corrección vale para todos los usuarios:
 ```
 python extraer/extraer.py "C:\Users\USER\Downloads\MODULAR BT + SUMINISTROS AREQUIPA.pdf"
 ```
-Para probar con pocas páginas: `--desde 1 --hasta 5`. Después, subir `VERSION` en `docs/sw.js`.
+Para probar con pocas páginas: `--desde 1 --hasta 5`. Después, subir `VERSION` y `CACHE_DATOS` en `docs/sw.js` (si solo cambia el código, basta `VERSION`).
 
 ## Probar en local
 ```
