@@ -33,6 +33,9 @@ el mapa). La corrección vale para todos los usuarios:
 - Tablas y permisos: `supabase/migrations/`. Configuración de acceso: `supabase/config.toml`
   (`npx supabase config push`). Las claves secretas van en `supabase/.env`, que no se sube.
 - Supabase gratis pausa el proyecto tras 7 días sin uso; se reactiva desde su panel.
+- Panel de la administradora: `docs/admin.html` (Resumen, Usuarios, En vivo). La app anota acciones en `actividad`
+  y el tiempo de uso en `tramos_uso` (latido cada minuto mientras está a la vista, `docs/sesion.js`). Solo la
+  administradora puede leerlos; `perfiles.bloqueado` deja a un usuario sin acceso. No se guarda el GPS.
 
 ## Rutas
 - Hasta un suministro buscado: en vivo con el GPS. Compiten las calles de OpenStreetMap (OSRM con alternativas)
