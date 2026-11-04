@@ -62,12 +62,43 @@ async function cerrarSesion() {
 }
 
 let accesoRegistrado = false;
+let registrando = false; // al abrir, la sesión avisa dos veces casi juntas: se cuenta una sola entrada
 /** Una vez por apertura de la app: último acceso y cantidad de veces que entró (para el panel de la admin). */
 async function registrarAcceso() {
-  if (accesoRegistrado) return;
-  const { error } = await supa.rpc("registrar_acceso");
-  if (!error) accesoRegistrado = true;
+  if (accesoRegistrado || registrando) return;
+  registrando = true;
+  const { data, error } = await supa.rpc("registrar_acceso");
+  registrando = false;
+  if (error) return;
+  accesoRegistrado = true;
+  if (data?.bloqueado) {
+    await supa.auth.signOut().catch(() => {});
+    mostrarEntrada("Esta cuenta no tiene acceso a la app.");
+    return;
+  }
+  anotar("entrar");
+  latir();
 }
+
+/** Anota una acción (buscar, ruta, plano…). Si falla, no importa: no interrumpe a quien usa la app. */
+function anotar(tipo, detalle = "") {
+  if (!usuarioActual || !navigator.onLine) return;
+  supa.from("actividad").insert({ tipo, detalle: String(detalle).slice(0, 80) }).then(() => {}, () => {});
+}
+
+// Tiempo de uso: cada minuto, mientras la app está a la vista, se alarga el tramo actual.
+// Al volver a la app después de dejarla (pantalla apagada, otra app) empieza un tramo nuevo.
+const nuevoTramo = () => (crypto.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+  (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+let tramoUso = nuevoTramo();
+function latir() {
+  if (!accesoRegistrado || !usuarioActual || document.hidden || !navigator.onLine) return;
+  supa.rpc("latido", { p_tramo: tramoUso }).then(() => {}, () => {});
+}
+setInterval(latir, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { tramoUso = nuevoTramo(); latir(); }
+});
 
 (async () => {
   // al volver de Google la dirección trae ?code=…: supabase-js lo canjea por la sesión y se limpia la barra

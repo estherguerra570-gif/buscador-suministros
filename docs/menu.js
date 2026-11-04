@@ -46,7 +46,7 @@ const HOJAS = {
   historial: hojaHistorial,
   agregar: () => hojaAgregar(),
   corregir: () => hojaCorregir(),
-  admin: hojaAdmin,
+  admin: () => { location.href = "admin.html"; },
   "mis-puntos": hojaMisPuntos,
   ruta: () => { activarVista("ruta"); setTimeout(() => $("#numero-ruta").focus(), 50); },
 };
@@ -92,44 +92,6 @@ function hojaUsuario() {
   };
 }
 
-// ---------- Panel de la administradora: quién usa la app y qué corrigió ----------
-const haceCuanto = (fecha) => {
-  const min = Math.round((Date.now() - new Date(fecha)) / 60000);
-  if (min < 2) return "ahora";
-  if (min < 60) return `hace ${min} min`;
-  if (min < 60 * 24) return `hace ${Math.round(min / 60)} h`;
-  return new Date(fecha).toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" });
-};
-
-async function hojaAdmin() {
-  abrirHoja("Usuarios y actividad", `<p class="vacio">Cargando…</p>`);
-  const [perf, hist] = await Promise.all([
-    supa.from("perfiles").select("*").order("ultimo_acceso", { ascending: false }),
-    supa.from("historial_correcciones").select("*").order("fecha", { ascending: false }).limit(300),
-  ]);
-  if (perf.error || hist.error) {
-    abrirHoja("Usuarios y actividad", `<p class="nota alerta">No se pudo cargar: ${escapar((perf.error ?? hist.error).message)}. Revisa la conexión.</p>`);
-    return;
-  }
-  const hechas = new Map();
-  for (const h of hist.data) if (h.accion === "corregir") hechas.set(h.usuario_id, (hechas.get(h.usuario_id) ?? 0) + 1);
-  const foto = (p) => (p.foto ? `<img class="foto-lista" src="${escapar(p.foto)}" alt="" referrerpolicy="no-referrer">` : `<span class="avatar chico">${escapar((p.nombre ?? "?").trim()[0]?.toUpperCase() ?? "?")}</span>`);
-  const movida = (h) => (h.lat_antes != null && h.lat != null ? ` · ${formatoDist(dist({ lat: h.lat_antes, lng: h.lng_antes }, h))}` : "");
-  abrirHoja("Usuarios y actividad", `
-    <h3 class="subtitulo">Usuarios (${perf.data.length})</h3>
-    <ul class="lista">${perf.data.map((p) => `
-      <li>${foto(p)}<span class="info"><strong class="texto">${escapar(p.nombre)}</strong><br>${escapar(p.email)}<br>
-        Último acceso: ${haceCuanto(p.ultimo_acceso)} · entró ${p.accesos} ${p.accesos === 1 ? "vez" : "veces"} ·
-        ${plural(hechas.get(p.id) ?? 0, "corrección")}</span></li>`).join("")}</ul>
-    <h3 class="subtitulo">Últimas correcciones</h3>
-    ${hist.data.length ? `<ul class="lista">${hist.data.map((h) => `
-      <li data-n="${escapar(h.numero)}"><span class="num">${escapar(h.numero)}</span>
-        <span class="info">${h.accion === "corregir" ? "📌 Corregido" : "↩︎ Vuelto al plano"} por ${escapar(h.usuario_nombre ?? "—")}${movida(h)}<br>
-        ${haceCuanto(h.fecha)}${h.nota ? " · " + escapar(h.nota) : ""}</span></li>`).join("")}</ul>`
-      : `<p class="vacio">Todavía nadie corrigió una ubicación.</p>`}`);
-  document.querySelectorAll("#hoja-cuerpo li[data-n]").forEach((li) => { li.onclick = () => hojaCorregir(li.dataset.n); });
-}
-
 // ---------- Búsquedas del día ----------
 function historialDeHoy() {
   const h = leer(CLAVE_HISTORIAL, null);
@@ -141,6 +103,7 @@ function registrarBusqueda(n) {
   const items = historialDeHoy().filter((x) => x.n !== n);
   items.unshift({ n, hora: horaCorta() });
   guardar(CLAVE_HISTORIAL, { fecha: hoyISO(), items: items.slice(0, 200) });
+  anotar("buscar", n);
 }
 
 function hojaHistorial() {
@@ -237,6 +200,7 @@ function hojaAgregar(b = { n: "", nota: "", lat: null, lng: null }) {
     };
     propios.push(nuevo);
     guardar(CLAVE_PROPIOS, propios);
+    anotar("agregar", nuevo.n);
     const s = { ...nuevo };
     datos.suministros.push(s);
     indice.set(s.n, s);

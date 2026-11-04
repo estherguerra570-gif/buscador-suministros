@@ -721,6 +721,7 @@ $("#btn-seguir").onclick = () => {
   nav.siguiendo = !nav.siguiendo;
   pintarBotonSeguir();
   if (nav.siguiendo) {
+    anotar("recorrido", nav.s.n);
     plegarPanel(true);
     if (miPosicion) mapa.setView([miPosicion.lat, miPosicion.lng], Math.max(mapa.getZoom(), 18));
   }
@@ -980,6 +981,7 @@ async function optimizarRuta({ manual = false } = {}) {
   const btn = $("#btn-optimizar");
   const pendientes = ruta.filter((n) => !visitados.has(n)).map((n) => indice.get(n));
   if (!pendientes.length) return;
+  if (manual) anotar("ruta", plural(pendientes.length, "suministro"));
   optimizando = true;
   const hechos = ruta.filter((n) => visitados.has(n));
   const partida = $("#partida").value, destino = $("#destino").value;
@@ -1086,6 +1088,7 @@ $("#btn-ubicacion").onclick = () => {
 let visor = null;
 async function abrirPlano(s) {
   const pg = paginas.get(s.p);
+  anotar("plano", `${s.n} · pág. ${s.p}`);
   if (s.px === undefined) await cargarZona(zonaDe(s));
   $("#visor").hidden = false;
   $("#visor-titulo").textContent = `Suministro ${s.n} · página ${s.p}`;
