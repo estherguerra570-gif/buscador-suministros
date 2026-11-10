@@ -34,7 +34,20 @@ body.panel-admin { height: auto; min-height: 100%; background: var(--fondo); }
   border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer;
 }
 .barra-dia .columna { width: 100%; max-width: 36px; background: var(--primario); opacity: .55; border-radius: 4px 4px 0 0; }
-.barra-dia.hoy .columna { opacity: 1; }
+.barra-dia.elegida .columna { opacity: 1; }
+.barra-dia.elegida .valor { color: var(--texto); font-weight: 700; }
+.barra-dia .valor { font-size: 10px; }
+
+/* Selector Días / Semanas / Meses */
+.segmentos { display: flex; gap: 4px; padding: 4px; margin-top: 4px; border-radius: 12px; background: var(--fondo-2); border: 1px solid var(--borde); }
+.segmentos button {
+  flex: 1; min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--suave);
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.segmentos button[aria-selected="true"] { background: var(--primario); color: #fff; }
+.detalle-uso { margin-top: 12px; }
+.detalle-uso h4 { margin: 14px 0 4px; font-size: 16px; text-transform: none; }
+.detalle-uso h4::first-letter { text-transform: uppercase; }
 .barra-dia .valor { font-size: 11px; color: var(--suave); white-space: nowrap; min-height: 14px; }
 .barra-dia .letra { font-size: 12px; color: var(--suave); text-transform: capitalize; }
 .barra-dia.hoy .letra { color: var(--texto); font-weight: 700; }

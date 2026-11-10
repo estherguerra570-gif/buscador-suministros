@@ -8,6 +8,12 @@ const SUPABASE_CLAVE = "sb_publishable_8FAJR9zYDJUCcwItnHO7-A_HDQl8Wvm";
 const CORREO_ADMIN = "estherguerra570@gmail.com";
 const DIAS = 30; // cuántos días de uso y actividad se descargan
 const ACTIVO_MIN = 2.5; // con un latido en estos minutos, está "usando ahora"
+const MESES = 6; // cuántos meses se ven en el gráfico por meses
+const MODOS = {
+  dia: { cuantos: 14, nombre: "Días", este: "Hoy", anterior: "el día anterior" },
+  semana: { cuantos: 8, nombre: "Semanas", este: "Esta semana", anterior: "la semana anterior" },
+  mes: { cuantos: MESES, nombre: "Meses", este: "Este mes", anterior: "el mes anterior" },
+};
 
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_CLAVE, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
@@ -94,19 +100,33 @@ async function todo(tabla, filtrar) {
   const error = resto.find((r) => r.error)?.error;
   return error ? { error } : { data: [primera, ...resto].flatMap((r) => r.data) };
 }
+// lo mismo para las funciones de resumen (por partes, una tras otra, hasta que llega una incompleta)
+async function todoRpc(funcion, args) {
+  const filas = [];
+  for (let i = 0; ; i += PARTE) {
+    const r = await supa.rpc(funcion, args).range(i, i + PARTE - 1);
+    if (r.error) return r;
+    filas.push(...r.data);
+    if (r.data.length < PARTE) return { data: filas };
+  }
+}
 
 async function cargar(silencioso = false) {
   if (!silencioso) { $("#estado").hidden = false; $("#estado").textContent = "Cargando…"; }
   const desde = new Date(Date.now() - DIAS * 864e5).toISOString();
-  const [perf, tram, act, hist, corr, intentos] = await Promise.all([
+  const h = new Date();
+  const desdeMeses = diaDe(new Date(h.getFullYear(), h.getMonth() - (MESES - 1), 1));
+  const [perf, tram, act, hist, corr, intentos, usoDia, accDia] = await Promise.all([
     supa.from("perfiles").select("*").order("ultimo_acceso", { ascending: false }),
     todo("tramos_uso", (q) => q.gt("ultimo", desde).order("id")),
     todo("actividad", (q) => q.gt("fecha", desde).order("fecha", { ascending: false }).order("id")),
     supa.from("historial_correcciones").select("*").order("fecha", { ascending: false }).limit(500),
     todo("correcciones", (q) => q.order("numero")),
     supa.rpc("admin_intentos"),
+    todoRpc("admin_uso_diario", { p_desde: desdeMeses }),
+    todoRpc("admin_acciones_diarias", { p_desde: desdeMeses }),
   ]);
-  const error = [perf, tram, act, hist, corr, intentos].find((r) => r.error)?.error;
+  const error = [perf, tram, act, hist, corr, intentos, usoDia, accDia].find((r) => r.error)?.error;
   if (error) {
     if (silencioso) return;
     $("#estado").hidden = false;
@@ -117,6 +137,8 @@ async function cargar(silencioso = false) {
   datos = {
     perfiles: perf.data, tramos: tram.data, actividad: act.data, historial: hist.data,
     correcciones: new Map(corr.data.map((c) => [c.numero, c.fecha])), intentos: intentos.data,
+    usoDia: usoDia.data.map((r) => ({ ...r, minutos: Number(r.minutos) })),
+    accDia: accDia.data.map((r) => ({ ...r, cantidad: Number(r.cantidad) })),
   };
   pintar();
 }
@@ -181,15 +203,6 @@ function pintarResumen() {
   const activos = lista.filter((u) => u.activo);
   const usoHoy = lista.reduce((s, u) => s + u.minHoy, 0);
 
-  // minutos de uso por día, últimos 7
-  const dias = [...Array(7)].map((_, i) => {
-    const d = new Date(Date.now() - (6 - i) * 864e5);
-    return { clave: diaDe(d), letra: d.toLocaleDateString("es-PE", { weekday: "short" }).slice(0, 2), min: 0 };
-  });
-  for (const t of datos.tramos) { const d = dias.find((x) => x.clave === diaDe(t.inicio)); if (d) d.min += minutosDe(t); }
-  const max = Math.max(...dias.map((d) => d.min), 1);
-  const iMax = dias.findIndex((d) => d.min === max);
-
   const buscados = new Map();
   for (const a of datos.actividad) if (a.tipo === "buscar" && diaDe(a.fecha) === hoy()) buscados.set(a.detalle, (buscados.get(a.detalle) ?? 0) + 1);
   const top = [...buscados].sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -204,17 +217,9 @@ function pintarResumen() {
     </div>
     ${activos.length ? `<p class="nota">🟢 Ahora: ${activos.map((u) => escapar(u.p.nombre.split(" ")[0])).join(", ")}</p>` : ""}
 
-    <h3 class="subtitulo">Tiempo de uso por día</h3>
-    <div class="grafico" role="list" aria-label="Minutos de uso de todos los usuarios, últimos 7 días">
-      ${dias.map((d, i) => `
-        <button class="barra-dia${d.clave === hoy() ? " hoy" : ""}" role="listitem" data-texto="${escapar(`${d.letra}: ${duracion(d.min)}`)}"
-          aria-label="${escapar(`${d.letra} ${duracion(d.min)}`)}">
-          <span class="valor">${(i === iMax || d.clave === hoy()) && d.min > 0 ? duracion(d.min) : ""}</span>
-          <span class="columna" style="height:${d.min ? Math.max(4, (d.min / max) * 100) : 0}%"></span>
-          <span class="letra">${escapar(d.letra)}</span>
-        </button>`).join("")}
-    </div>
-    <p class="nota" id="dato-dia">${desdeUso ? `El tiempo de uso se cuenta desde: ${fechaHora(desdeUso)}` : "El tiempo de uso se empieza a contar cuando los usuarios abran la app."}</p>
+    <h3 class="subtitulo">Uso de la app</h3>
+    <div id="uso"></div>
+    <p class="nota">${desdeUso ? `El tiempo de uso se cuenta desde: ${fechaHora(desdeUso)}` : "El tiempo de uso se empieza a contar cuando los usuarios abran la app."}</p>
 
     <h3 class="subtitulo">Más buscados hoy</h3>
     ${top.length ? `<ul class="lista">${top.map(([n, c]) => `
@@ -230,8 +235,121 @@ function pintarResumen() {
       <ul class="lista">${datos.intentos.slice(0, 10).map((i) => `<li><span class="info">⚠️ ${fechaHora(i.fecha)}</span></li>`).join("")}</ul>`
       : `<p class="vacio">Ninguno en los últimos 30 días.</p>`}`;
 
-  document.querySelectorAll(".barra-dia").forEach((b) => { b.onclick = () => { $("#dato-dia").textContent = b.dataset.texto; }; });
+  pintarUso();
   document.querySelectorAll("#p-resumen li[data-u]").forEach((li) => { li.onclick = () => abrirUsuario(li.dataset.u); });
+}
+
+// ---------- Uso por día, semana o mes ----------
+let modoUso = "dia";
+let periodoUso = null; // clave del periodo elegido; null = el actual
+
+const fechaDe = (clave) => { const [a, m, d] = clave.split("-").map(Number); return new Date(a, m - 1, d || 1); };
+function claveDe(dia, modo) { // dia: AAAA-MM-DD → día, lunes de su semana o AAAA-MM
+  if (modo === "dia") return dia;
+  if (modo === "mes") return dia.slice(0, 7);
+  const f = fechaDe(dia);
+  f.setDate(f.getDate() - ((f.getDay() + 6) % 7));
+  return diaDe(f);
+}
+function periodos(modo) { // del más antiguo al actual
+  const n = MODOS[modo].cuantos, h = new Date();
+  return [...Array(n)].map((_, i) => {
+    const k = n - 1 - i;
+    const f = modo === "mes" ? new Date(h.getFullYear(), h.getMonth() - k, 1)
+      : new Date(h.getFullYear(), h.getMonth(), h.getDate() - (modo === "semana" ? 7 * k : k));
+    return claveDe(diaDe(f), modo);
+  });
+}
+const corta = (f) => f.toLocaleDateString("es-PE", { day: "numeric", month: "short" }).replace(".", "");
+function nombrePeriodo(clave, modo, largo = false) {
+  const f = fechaDe(clave);
+  if (modo === "dia") return largo ? f.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" }) : String(f.getDate());
+  if (modo === "mes") return f.toLocaleDateString("es-PE", largo ? { month: "long", year: "numeric" } : { month: "short" }).replace(".", "");
+  const fin = new Date(f); fin.setDate(f.getDate() + 6);
+  return largo ? `semana del ${corta(f)} al ${corta(fin)}` : `${f.getDate()}/${f.getMonth() + 1}`;
+}
+function usoPor(modo) {
+  const m = new Map(periodos(modo).map((k) => [k, { clave: k, min: 0, usuarios: new Map(), acc: {} }]));
+  const de = (uid, p) => p.usuarios.get(uid) ?? p.usuarios.set(uid, { min: 0, buscar: 0 }).get(uid);
+  for (const r of datos.usoDia) {
+    const p = m.get(claveDe(r.dia, modo));
+    if (p) { p.min += r.minutos; de(r.usuario_id, p).min += r.minutos; }
+  }
+  for (const r of datos.accDia) {
+    const p = m.get(claveDe(r.dia, modo));
+    if (!p) continue;
+    p.acc[r.tipo] = (p.acc[r.tipo] ?? 0) + r.cantidad;
+    if (r.tipo === "buscar") de(r.usuario_id, p).buscar += r.cantidad;
+  }
+  return [...m.values()];
+}
+
+function pintarUso() {
+  const lista = usoPor(modoUso);
+  const actual = lista.at(-1).clave;
+  if (!lista.some((p) => p.clave === periodoUso)) periodoUso = actual;
+  const i = lista.findIndex((p) => p.clave === periodoUso);
+  const sel = lista[i], antes = lista[i - 1];
+  const max = Math.max(...lista.map((p) => p.min), 1);
+  const iMax = lista.findIndex((p) => p.min === max);
+  const enCurso = sel.clave === actual;
+  const personas = sel.usuarios.size;
+  const acc = (t) => sel.acc[t] ?? 0;
+
+  let comparacion = "";
+  if (antes && antes.min > 0) {
+    const cambio = Math.round(((sel.min - antes.min) / antes.min) * 100);
+    comparacion = `${cambio >= 0 ? "▲" : "▼"} ${Math.abs(cambio)} % que ${MODOS[modoUso].anterior}${enCurso ? " (todavía en curso)" : ""}`;
+  }
+  const ranking = [...sel.usuarios].filter(([, u]) => u.min > 0 || u.buscar > 0).sort((a, b) => b[1].min - a[1].min);
+  const perfil = (id) => datos.perfiles.find((p) => p.id === id);
+
+  $("#uso").innerHTML = `
+    <div class="segmentos" role="tablist">${Object.entries(MODOS).map(([k, m]) => `
+      <button role="tab" aria-selected="${k === modoUso}" data-modo="${k}">${m.nombre}</button>`).join("")}
+    </div>
+    <div class="grafico" role="list" aria-label="Tiempo de uso de todos los usuarios por ${MODOS[modoUso].nombre.toLowerCase()}">
+      ${lista.map((p, j) => `
+        <button class="barra-dia${p.clave === periodoUso ? " elegida" : ""}${p.clave === actual ? " hoy" : ""}" role="listitem" data-clave="${p.clave}"
+          aria-label="${escapar(`${nombrePeriodo(p.clave, modoUso, true)}: ${duracion(p.min)}`)}">
+          <span class="valor">${(j === iMax || p.clave === periodoUso) && p.min > 0 ? duracion(p.min).replace(" min", "m").replace(" h ", "h ") : ""}</span>
+          <span class="columna" style="height:${p.min ? Math.max(4, (p.min / max) * 100) : 0}%"></span>
+          <span class="letra">${escapar(nombrePeriodo(p.clave, modoUso))}</span>
+        </button>`).join("")}
+    </div>
+    <div class="detalle-uso">
+      <h4>${enCurso ? MODOS[modoUso].este : ""}${enCurso && modoUso !== "dia" ? " · " : ""}${enCurso && modoUso === "dia" ? "" : escapar(nombrePeriodo(sel.clave, modoUso, true))}</h4>
+      ${comparacion ? `<p class="nota">${comparacion}</p>` : ""}
+      <div class="cuadros">
+        ${cuadro(duracion(sel.min), "Tiempo de uso")}
+        ${cuadro(personas, personas === 1 ? "Persona la usó" : "Personas la usaron")}
+        ${cuadro(personas ? duracion(sel.min / personas) : "0 min", "Promedio por persona")}
+        ${cuadro(acc("buscar"), "Búsquedas")}
+        ${cuadro(acc("ruta"), "Rutas creadas")}
+        ${cuadro(acc("corregir"), "Correcciones")}
+      </div>
+      <h4>Quién la usó</h4>
+      ${ranking.length ? `<ul class="lista">${ranking.map(([id, u]) => `
+        <li data-u="${id}">${foto(perfil(id))}<span class="info"><strong class="texto">${escapar(perfil(id)?.nombre ?? "Alguien")}</strong><br>
+          ${duracion(u.min)} de uso · ${plural(u.buscar, "búsqueda")}</span><span class="flecha">›</span></li>`).join("")}</ul>`
+        : `<p class="vacio">Nadie usó la app en este periodo.</p>`}
+    </div>`;
+
+  document.querySelectorAll("#uso [data-modo]").forEach((b) => { b.onclick = () => { modoUso = b.dataset.modo; periodoUso = null; pintarUso(); }; });
+  document.querySelectorAll("#uso .barra-dia").forEach((b) => { b.onclick = () => { periodoUso = b.dataset.clave; pintarUso(); }; });
+  document.querySelectorAll("#uso li[data-u]").forEach((li) => { li.onclick = () => abrirUsuario(li.dataset.u); });
+}
+
+// minutos de un usuario en la semana y el mes actuales
+function usoActualDe(id) {
+  const semana = claveDe(hoy(), "semana"), mes = hoy().slice(0, 7);
+  let s = 0, m = 0;
+  for (const r of datos.usoDia) {
+    if (r.usuario_id !== id) continue;
+    if (claveDe(r.dia, "semana") === semana) s += r.minutos;
+    if (r.dia.startsWith(mes)) m += r.minutos;
+  }
+  return { semana: s, mes: m };
 }
 
 function abrirUsuario(id) {
@@ -264,6 +382,7 @@ function pintarDetalle(u) {
   const p = u.p;
   const suyos = eventos().filter((e) => e.usuario_id === p.id);
   const c = (t) => u.cuentas[t] ?? 0;
+  const actual = usoActualDe(p.id);
   $("#p-usuarios").innerHTML = `
     <button class="btn" id="d-volver">← Todos los usuarios</button>
     <div class="tarjeta perfil">${foto(p, "foto-perfil")}
@@ -273,6 +392,8 @@ function pintarDetalle(u) {
     </div>
     <div class="cuadros">
       ${cuadro(duracion(u.minHoy), "Uso hoy")}
+      ${cuadro(duracion(actual.semana), "Uso esta semana")}
+      ${cuadro(duracion(actual.mes), "Uso este mes")}
       ${cuadro(duracion(u.min), `Uso en ${DIAS} días`)}
       ${cuadro(p.accesos, "Entradas")}
       ${cuadro(c("buscar"), "Búsquedas")}
