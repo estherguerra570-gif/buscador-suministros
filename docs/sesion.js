@@ -91,9 +91,12 @@ function anotar(tipo, detalle = "") {
 const nuevoTramo = () => (crypto.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
   (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
 let tramoUso = nuevoTramo();
+let ultimoLatidoOk = 0;
 function latir() {
   if (!accesoRegistrado || !usuarioActual || document.hidden || !navigator.onLine) return;
-  supa.rpc("latido", { p_tramo: tramoUso }).then(() => {}, () => {});
+  // sin señal por más de 2,5 min el servidor ya no alarga el tramo (límite de 3 min): se empieza otro
+  if (ultimoLatidoOk && Date.now() - ultimoLatidoOk > 150000) tramoUso = nuevoTramo();
+  supa.rpc("latido", { p_tramo: tramoUso }).then(({ error }) => { if (!error) ultimoLatidoOk = Date.now(); }, () => {});
 }
 setInterval(latir, 60000);
 document.addEventListener("visibilitychange", () => {

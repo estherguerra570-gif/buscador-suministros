@@ -84,15 +84,26 @@ $("#btn-google").onclick = async () => {
 })();
 
 // ---------- Datos ----------
+// Supabase entrega como mucho 1000 filas por consulta: se piden por partes hasta tenerlas todas.
+const PARTE = 1000;
+async function todo(tabla, filtrar) {
+  const primera = await filtrar(supa.from(tabla).select("*", { count: "exact" })).range(0, PARTE - 1);
+  if (primera.error || primera.count == null || primera.count <= PARTE) return primera;
+  const resto = await Promise.all([...Array(Math.ceil(primera.count / PARTE) - 1)].map((_, i) =>
+    filtrar(supa.from(tabla).select("*")).range((i + 1) * PARTE, (i + 2) * PARTE - 1)));
+  const error = resto.find((r) => r.error)?.error;
+  return error ? { error } : { data: [primera, ...resto].flatMap((r) => r.data) };
+}
+
 async function cargar(silencioso = false) {
   if (!silencioso) { $("#estado").hidden = false; $("#estado").textContent = "Cargando…"; }
   const desde = new Date(Date.now() - DIAS * 864e5).toISOString();
   const [perf, tram, act, hist, corr, intentos] = await Promise.all([
     supa.from("perfiles").select("*").order("ultimo_acceso", { ascending: false }),
-    supa.from("tramos_uso").select("*").gt("ultimo", desde).limit(20000),
-    supa.from("actividad").select("*").gt("fecha", desde).order("fecha", { ascending: false }).limit(10000),
+    todo("tramos_uso", (q) => q.gt("ultimo", desde).order("id")),
+    todo("actividad", (q) => q.gt("fecha", desde).order("fecha", { ascending: false }).order("id")),
     supa.from("historial_correcciones").select("*").order("fecha", { ascending: false }).limit(500),
-    supa.from("correcciones").select("numero, fecha"),
+    todo("correcciones", (q) => q.order("numero")),
     supa.rpc("admin_intentos"),
   ]);
   const error = [perf, tram, act, hist, corr, intentos].find((r) => r.error)?.error;

@@ -1,7 +1,7 @@
 // Guarda la app y los datos en el celular para que la búsqueda funcione sin señal.
 // Subir VERSION cada vez que cambie el código. Subir CACHE_DATOS solo cuando se regeneren los datos del PDF
 // (así una actualización del código no obliga a bajar de nuevo los 4 MB del índice).
-const VERSION = "v23";
+const VERSION = "v24";
 const CACHE_DATOS = "datos-2026-10-28"; // índice y zonas: se usan desde el celular, sin esperar a internet
 const CACHE_PLANOS = "planos-v1"; // imágenes de páginas del plano: se guardan a medida que se abren
 const ARCHIVOS = [
