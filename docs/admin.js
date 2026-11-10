@@ -297,9 +297,10 @@ function pintarUso() {
   const acc = (t) => sel.acc[t] ?? 0;
 
   let comparacion = "";
-  if (antes && antes.min > 0) {
+  if (enCurso) comparacion = "Va en curso: se sigue sumando.";
+  else if (antes && antes.min > 0) {
     const cambio = Math.round(((sel.min - antes.min) / antes.min) * 100);
-    comparacion = `${cambio >= 0 ? "▲" : "▼"} ${Math.abs(cambio)} % que ${MODOS[modoUso].anterior}${enCurso ? " (todavía en curso)" : ""}`;
+    comparacion = `${cambio >= 0 ? "▲" : "▼"} ${Math.abs(cambio)} % que ${MODOS[modoUso].anterior}`;
   }
   const ranking = [...sel.usuarios].filter(([, u]) => u.min > 0 || u.buscar > 0).sort((a, b) => b[1].min - a[1].min);
   const perfil = (id) => datos.perfiles.find((p) => p.id === id);
@@ -318,7 +319,9 @@ function pintarUso() {
         </button>`).join("")}
     </div>
     <div class="detalle-uso">
-      <h4>${enCurso ? MODOS[modoUso].este : ""}${enCurso && modoUso !== "dia" ? " · " : ""}${enCurso && modoUso === "dia" ? "" : escapar(nombrePeriodo(sel.clave, modoUso, true))}</h4>
+      <h4>${!enCurso ? escapar(nombrePeriodo(sel.clave, modoUso, true))
+        : modoUso === "semana" ? `Esta semana · ${escapar(nombrePeriodo(sel.clave, modoUso, true).replace("semana ", ""))}`
+        : modoUso === "mes" ? `Este mes · ${escapar(nombrePeriodo(sel.clave, modoUso, true))}` : "Hoy"}</h4>
       ${comparacion ? `<p class="nota">${comparacion}</p>` : ""}
       <div class="cuadros">
         ${cuadro(duracion(sel.min), "Tiempo de uso")}
