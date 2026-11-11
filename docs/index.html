@@ -34,6 +34,10 @@
       </button>
       <!-- Vista: buscar -->
       <div class="vista" data-vista="buscar">
+        <div id="modo-busqueda" class="modo-busqueda" role="group" aria-label="Qué buscar">
+          <button type="button" data-modo="suministro" class="activo">Suministro</button>
+          <button type="button" data-modo="sed">▲ SED</button>
+        </div>
         <form id="form-buscar" class="buscar-fila">
           <input id="buscador" type="search" inputmode="numeric" enterkeyhint="search" autocomplete="off"
                  placeholder="Número de suministro…" aria-label="Número de suministro">
@@ -163,5 +167,6 @@
   <script src="menu.js"></script>
   <script src="catastro.js"></script>
   <script src="jornada.js"></script>
+  <script src="sed.js"></script>
 </body>
 </html>

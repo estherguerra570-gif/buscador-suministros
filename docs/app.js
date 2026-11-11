@@ -359,6 +359,7 @@ function buscar(texto) {
   const ul = $("#resultados");
   ul.innerHTML = "";
   if (!q) { $("#ficha").hidden = true; return []; }
+  if (window.modoSed?.()) { window.buscarSed(q); return []; } // buscando subestaciones (sed.js)
 
   const exactos = [], empiezan = [], contienen = [];
   for (const s of datos.suministros) {
@@ -386,6 +387,7 @@ function ejecutarBusqueda() {
   const q = $("#buscador").value.replace(/\D/g, "");
   if (!q || !datos) return;
   $("#buscador").blur(); // cierra el teclado del celular
+  if (window.modoSed?.()) return window.ejecutarBusquedaSed(q);
   if (indice.has(q)) return seleccionar(q);
   const lista = buscar(q);
   if (lista.length === 1) seleccionar(lista[0].n);
@@ -417,6 +419,7 @@ function seleccionar(n) {
            ${s.nota ? `<dt>Referencia</dt><dd>${escapar(s.nota)}</dd>` : ""}`
         : `<dt>Página</dt><dd>${s.p}</dd>
            <dt>Poste cercano</dt><dd id="f-poste">${s.poste !== undefined ? s.poste ?? "—" : "…"}</dd>`}
+      <dt>SED cercana</dt><dd id="f-sed" class="gris">Buscando…</dd>
       <dt>GPS</dt><dd>${s.lat}, ${s.lng}</dd>
       <dt>Mz y lote (aprox.)</dt><dd id="f-direccion" class="gris">Buscando en el catastro…</dd>
       ${s.corregido ? `<dt>Ubicación</dt><dd>Corregida${s.corregido.por ? " por " + escapar(s.corregido.por) : ""}${s.corregido.fecha ? " el " + new Date(s.corregido.fecha).toLocaleDateString("es-PE") : ""} (en el plano: ${s.latPlano}, ${s.lngPlano})</dd>
@@ -439,6 +442,13 @@ function seleccionar(n) {
     dd.classList.remove("gris");
     dd.textContent = d ? [d.mz && `Mz ${d.mz}`, d.lt && `Lt ${d.lt}`].filter(Boolean).join(" ") + (d.pueblo ? ` · ${d.pueblo}` : "") +
       " · lote más cercano según COFOPRI" : "Sin datos en el catastro de COFOPRI";
+  });
+  // subestación más cercana del plano (sed.js)
+  (window.sedCercana?.(s.lat, s.lng) ?? Promise.resolve(null)).then((d) => {
+    const dd = $("#f-sed");
+    if (seleccionActual !== s.n || !dd) return;
+    dd.classList.remove("gris");
+    dd.textContent = d ? `${d.n}${d.kva ? ` (${d.kva} kVA)` : ""} · a ${d.metros} m` : "—";
   });
   trazarCamino(s);
   if (!propio && s.poste === undefined) {
@@ -492,7 +502,7 @@ function alMoverme(p) {
   if (dist(yo, n.s) < LLEGADA_METROS) {
     if (!n.llego) {
       n.llego = true;
-      textoRecorrido("✓ Llegaste al suministro");
+      textoRecorrido(n.s.tipo === "sed" ? "✓ Llegaste a la SED" : "✓ Llegaste al suministro");
       textoPanel(`${n.s.n} · ✓ Llegaste`);
       capaCamino.clearLayers();
     }
@@ -1100,10 +1110,11 @@ $("#btn-ubicacion").onclick = () => {
 let visor = null;
 async function abrirPlano(s) {
   const pg = paginas.get(s.p);
-  anotar("plano", `${s.n} · pág. ${s.p}`);
-  if (s.px === undefined) await cargarZona(zonaDe(s));
+  const nombre = s.tipo === "sed" ? "SED" : "Suministro";
+  anotar("plano", `${s.tipo === "sed" ? "SED " : ""}${s.n} · pág. ${s.p}`);
+  if (s.px === undefined && s.tipo !== "sed") await cargarZona(zonaDe(s));
   $("#visor").hidden = false;
-  $("#visor-titulo").textContent = `Suministro ${s.n} · página ${s.p}`;
+  $("#visor-titulo").textContent = `${nombre} ${s.n} · página ${s.p}`;
   if (visor) visor.remove();
   visor = L.map("visor-mapa", { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4, zoomSnap: 0.25, rotateControl: false });
   const limites = [[0, 0], [pg.alto, pg.ancho]];

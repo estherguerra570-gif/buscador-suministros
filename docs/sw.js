@@ -1,12 +1,12 @@
 // Guarda la app y los datos en el celular para que la búsqueda funcione sin señal.
 // Subir VERSION cada vez que cambie el código. Subir CACHE_DATOS solo cuando se regeneren los datos del PDF
 // (así una actualización del código no obliga a bajar de nuevo los 4 MB del índice).
-const VERSION = "v26";
+const VERSION = "v27";
 const CACHE_DATOS = "datos-2026-10-28"; // índice y zonas: se usan desde el celular, sin esperar a internet
 const CACHE_PLANOS = "planos-v1"; // imágenes de páginas del plano: se guardan a medida que se abren
 const CACHE_CATASTRO = "catastro-2026-11-11"; // manzanas y lotes de COFOPRI: subir al regenerarlos
 const ARCHIVOS = [
-  "./", "index.html", "styles.css", "app.js", "menu.js", "gestos.js", "sesion.js", "catastro.js", "jornada.js", "lib/supabase.js", "manifest.json",
+  "./", "index.html", "styles.css", "app.js", "menu.js", "gestos.js", "sesion.js", "catastro.js", "jornada.js", "sed.js", "lib/supabase.js", "manifest.json",
   "lib/leaflet.js", "lib/leaflet-rotate.js", "lib/leaflet.css",
   "icono-192.png", "icono-512.png",
 ];

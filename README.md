@@ -13,7 +13,7 @@ interpolación entre esas esquinas.
 Leyenda usada para filtrar:
 - Suministro: número verde (`#267300`) o anaranjado (`#a87000`)
 - Poste: número rojo (`#a83800`)
-- Subestación: triángulo (se ignora)
+- Subestación (SED): triángulo con dos números negros en negrita: la SED arriba y los kVA abajo (`extraer/sed.py`)
 
 Se toman números de 1 a 6 cifras.
 
@@ -64,6 +64,15 @@ el mapa). La corrección vale para todos los usuarios:
 - `docs/catastro.js`: capa "Mz, lotes y calles (COFOPRI)" y la Mz/Lt aproximada en la ficha de cada suministro. Cubre ~56 % de los suministros; los nombres de COFOPRI pueden no coincidir con los
   de la hoja (por ejemplo "PJV Túpac Amaru" frente a "Urb. Túpac Amaru").
 - Regenerar: `python extraer/catastro.py` y subir `CACHE_CATASTRO` en `docs/sw.js`.
+
+## SED (subestaciones)
+- `extraer/sed.py` lee del plano los números negros en negrita de cada SED (con su potencia en kVA) y los cruza con la
+  "RELACION SED MODULAR BT.xlsx" (columna B = SED; también trae dirección y modular). Ubica 4551 de 4562.
+  Las que tocan el borde de una hoja solo se usan si no aparecen enteras en otra. Genera `docs/data/sed.json`.
+- `docs/sed.js`: el buscador tiene "Suministro | SED"; la ficha de la SED (kVA, dirección, modular, ver en el plano,
+  recorrido); capa "SED (subestaciones)" en el mapa; y en la ficha de cada suministro "SED cercana" (la más cercana a
+  menos de 600 m, por distancia: no es la red eléctrica).
+- Regenerar: `python extraer/sed.py "...MODULAR BT + SUMINISTROS AREQUIPA.pdf" "...RELACION SED MODULAR BT.xlsx"`.
 
 ## Estructura
 - `extraer/extraer.py`: genera `docs/data/indice.json` (para buscar), `docs/data/zonas/*.json` (detalle por zonas
