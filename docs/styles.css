@@ -374,12 +374,11 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
 .jr-consejos { margin: 16px 0 0; padding-left: 20px; }
 
 /* ---------- SED (subestaciones) ---------- */
-.modo-busqueda { display: flex; gap: 6px; margin-bottom: 8px; }
-.modo-busqueda button {
-  flex: 1; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--borde); background: var(--fondo-2);
-  font: inherit; font-weight: 600; color: var(--texto); cursor: pointer;
+.modo-sed {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;
+  padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--primario); color: #fff;
 }
-.modo-busqueda button.activo { background: var(--primario); border-color: var(--primario); color: #fff; }
+.modo-sed[hidden] { display: none; }
 .tri-sed { color: #111; font-size: 0.9em; margin-right: 6px; }
 .marca-sed {
   display: inline-flex; align-items: center; gap: 2px; transform: translate(-8px, -50%); white-space: nowrap;

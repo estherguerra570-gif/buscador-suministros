@@ -23,23 +23,26 @@
   }).catch(() => { cargar.p = null; return null; }));
   cargar();
 
-  // ---------- Selector "Suministro | SED" del buscador ----------
+  // ---------- Buscar SED: desde el menú (☰ > Buscar SED); el buscador pasa a buscar SED ----------
   window.modoSed = () => modo === "sed";
-  document.querySelectorAll("#modo-busqueda button").forEach((b) => {
-    b.onclick = () => {
-      modo = b.dataset.modo;
-      document.querySelectorAll("#modo-busqueda button").forEach((x) => x.classList.toggle("activo", x === b));
-      const t = modo === "sed" ? "Número de SED…" : "Número de suministro…";
-      $("#buscador").placeholder = t;
-      $("#buscador").setAttribute("aria-label", t);
-      $("#buscador").value = "";
-      $("#ficha").hidden = true;
-      $("#resultados").innerHTML = "";
-      seleccionActual = null;
-      detenerNavegacion();
-      $("#buscador").focus();
-    };
-  });
+  function ponerModo(m, limpiar = false) {
+    modo = m;
+    $("#modo-sed").hidden = m !== "sed";
+    const t = m === "sed" ? "Número de SED…" : "Número de suministro…";
+    $("#buscador").placeholder = t;
+    $("#buscador").setAttribute("aria-label", t);
+    if (!limpiar) return;
+    $("#buscador").value = "";
+    $("#ficha").hidden = true;
+    $("#resultados").innerHTML = "";
+    seleccionActual = null;
+    detenerNavegacion();
+    if (marcadorSeleccion) { marcadorSeleccion.remove(); marcadorSeleccion = null; }
+    $("#buscador").focus();
+  }
+  HOJAS["buscar-sed"] = () => { activarVista("buscar"); ponerModo("sed", true); };
+  $("#salir-sed").onclick = () => ponerModo("suministro", true);
+  window.salirSed = () => { if (modo === "sed") ponerModo("suministro"); }; // al abrir un suministro desde otro lado
 
   /** Sugerencias mientras se escribe (en modo SED). */
   window.buscarSed = async (q) => {
@@ -134,12 +137,6 @@
       const m = marcas.get(s.n);
       if (!capa.hasLayer(m)) capa.addLayer(m);
     }
-  }
-  function ponerModo(m) {
-    if (modo === m) return;
-    modo = m;
-    document.querySelectorAll("#modo-busqueda button").forEach((x) => x.classList.toggle("activo", x.dataset.modo === m));
-    $("#buscador").placeholder = m === "sed" ? "Número de SED…" : "Número de suministro…";
   }
   mapa.on("moveend overlayadd", dibujar);
 

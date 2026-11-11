@@ -34,9 +34,9 @@
       </button>
       <!-- Vista: buscar -->
       <div class="vista" data-vista="buscar">
-        <div id="modo-busqueda" class="modo-busqueda" role="group" aria-label="Qué buscar">
-          <button type="button" data-modo="suministro" class="activo">Suministro</button>
-          <button type="button" data-modo="sed">▲ SED</button>
+        <div id="modo-sed" class="modo-sed" hidden>
+          <strong>▲ Buscando SED</strong>
+          <button type="button" id="salir-sed" class="btn chico">✕ Volver a suministros</button>
         </div>
         <form id="form-buscar" class="buscar-fila">
           <input id="buscador" type="search" inputmode="numeric" enterkeyhint="search" autocomplete="off"
@@ -117,6 +117,7 @@
       </div>
     </div>
     <button class="menu-item" data-hoja="usuario">👤 Usuario</button>
+    <button class="menu-item" data-hoja="buscar-sed">▲ Buscar SED</button>
     <button class="menu-item" data-hoja="historial">🕘 Búsquedas de hoy <span id="cuenta-historial" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="agregar">＋ Agregar suministro nuevo</button>
     <button class="menu-item" data-hoja="corregir">📌 Corregir ubicación <span id="cuenta-corregidos" class="cuenta"></span></button>

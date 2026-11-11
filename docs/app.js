@@ -396,6 +396,7 @@ function ejecutarBusqueda() {
 function seleccionar(n) {
   const s = indice.get(n);
   if (!s) return;
+  window.salirSed?.();
   seleccionActual = n;
   $("#buscador").value = n;
   $("#resultados").innerHTML = "";
