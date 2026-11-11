@@ -1,7 +1,7 @@
 "use strict";
 // Manzanas, lotes, calles y pueblos del catastro público de COFOPRI sobre el mapa (datos en data/catastro,
 // generados con extraer/catastro.py). Se bajan por zonas de ~1 km, solo las que se ven, y quedan guardadas
-// para usarlas sin señal. También: buscar por dirección (pueblo + Mz + Lt) y la Mz/Lt de un suministro.
+// para usarlas sin señal. También da la Mz/Lt aproximada de un suministro (ficha).
 // Usa las globales de app.js (mapa, controlCapas, $...) y menu.js (abrirHoja, HOJAS, escapar).
 
 (() => {
@@ -101,88 +101,4 @@
     return mejor;
   };
 
-  // ---------- Buscar por dirección ----------
-  const normal = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()
-    .replace(/\b(MZ|MZA|LT|LOTE|MANZANA|URB|AAHH|AA\.HH|PJV|CP|ASOC|PBL|TRAD|SECT|SECTOR|N[°º]?)\b\.?/g, " ")
-    .replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  const limpiarCodigo = (t) => String(t ?? "").toUpperCase().replace(/^(MZ|MZA|LT|LOTE)\.?\s*/, "").replace(/\s+/g, "").replace(/^0+(?=\d)/, "");
-
-  async function hojaDireccion() {
-    abrirHoja("Buscar por dirección", `
-      <p class="nota">Escribe el pueblo o urbanización y la manzana y el lote, como en la hoja. Datos del catastro de COFOPRI.</p>
-      <label class="campo">Pueblo o urbanización
-        <input id="dir-pueblo" list="dir-pueblos" autocomplete="off" placeholder="Ej.: Túpac Amaru, Pachacútec zona H…">
-      </label>
-      <datalist id="dir-pueblos"></datalist>
-      <div class="fila">
-        <label class="campo">Manzana <input id="dir-mz" autocomplete="off" placeholder="Ej.: E" maxlength="6"></label>
-        <label class="campo">Lote <input id="dir-lt" autocomplete="off" inputmode="numeric" placeholder="Ej.: 14" maxlength="6"></label>
-      </div>
-      <button class="btn primario" id="dir-buscar">Buscar</button>
-      <div id="dir-resultados"></div>`);
-    const i = await cargarInfo();
-    if (!i) { $("#dir-resultados").innerHTML = `<p class="vacio">Sin señal: no se pudo bajar el catastro.</p>`; return; }
-    $("#dir-pueblos").innerHTML = i.pueblos.slice(0, 2000).map((p) => `<option value="${escapar(p[0])}">`).join("");
-    const buscarYa = () => buscarDireccion($("#dir-pueblo").value, $("#dir-mz").value, $("#dir-lt").value);
-    $("#dir-buscar").onclick = buscarYa;
-    ["#dir-pueblo", "#dir-mz", "#dir-lt"].forEach((s) => $(s).addEventListener("keydown", (e) => { if (e.key === "Enter") buscarYa(); }));
-    $("#dir-pueblo").focus();
-  }
-
-  async function buscarDireccion(textoPueblo, mzTexto, ltTexto) {
-    const salida = $("#dir-resultados");
-    const mz = limpiarCodigo(mzTexto), lt = limpiarCodigo(ltTexto);
-    if (!mz && !lt) { salida.innerHTML = `<p class="nota alerta">Escribe al menos la manzana o el lote.</p>`; return; }
-    salida.innerHTML = `<p class="vacio">Buscando…</p>`;
-    const i = await cargarInfo();
-    const palabras = normal(textoPueblo).split(" ").filter(Boolean);
-    const coinciden = (nombre) => palabras.every((p) => normal(nombre).split(" ").some((w) => w.startsWith(p)));
-
-    // zonas donde buscar: las de los pueblos que coinciden, o las que se ven en pantalla si no escribió pueblo
-    const claves = new Set();
-    const pueblos = palabras.length ? i.pueblos.filter((p) => coinciden(p[0])) : [];
-    if (palabras.length && !pueblos.length) {
-      salida.innerHTML = `<p class="vacio">No hay ningún pueblo o urbanización con “${escapar(textoPueblo)}”. Prueba con menos palabras.</p>`;
-      return;
-    }
-    if (pueblos.length > 40) {
-      salida.innerHTML = `<p class="vacio">Hay ${pueblos.length} pueblos con ese nombre. Escribe algo más (por ejemplo la zona o el sector).</p>`;
-      return;
-    }
-    for (const [, y0, x0, y1, x1] of pueblos) {
-      const a = (v, b) => Math.floor((b + v / i.escala) / i.zona_grados);
-      for (let y = a(y0, i.base[0]); y <= a(y1, i.base[0]); y++)
-        for (let x = a(x0, i.base[1]); x <= a(x1, i.base[1]); x++) claves.add(`${y}_${x}`);
-    }
-    if (!palabras.length) zonasEnPantalla().forEach((k) => claves.add(k));
-    if (claves.size > 60) { salida.innerHTML = `<p class="vacio">Escribe el nombre del pueblo para buscar.</p>`; return; }
-
-    const hallados = [];
-    for (const z of await Promise.all([...claves].map(zona))) {
-      for (const [pos, l, m, pueblo] of z?.l ?? []) {
-        if ((mz && limpiarCodigo(m) !== mz) || (lt && limpiarCodigo(l) !== lt)) continue;
-        if (palabras.length && !coinciden(pueblo)) continue;
-        hallados.push({ pos, lt: l, mz: m, pueblo });
-      }
-    }
-    if (!hallados.length) {
-      salida.innerHTML = `<p class="vacio">No se encontró${mz ? ` la Mz ${escapar(mz)}` : ""}${lt ? ` lote ${escapar(lt)}` : ""}${palabras.length ? " en ese pueblo" : " en lo que se ve del mapa"}.</p>`;
-      return;
-    }
-    salida.innerHTML = `<ul class="lista">${hallados.slice(0, 30).map((h, k) => `
-      <li><button class="btn ancho dir-ir" data-k="${k}"><b>Mz ${escapar(h.mz || "?")} Lt ${escapar(h.lt)}</b><br><span class="nota">${escapar(h.pueblo || "Pueblo sin nombre")}</span></button></li>`).join("")}</ul>
-      ${hallados.length > 30 ? `<p class="nota">Y ${hallados.length - 30} más. Escribe el pueblo para acotar.</p>` : ""}`;
-    salida.querySelectorAll(".dir-ir").forEach((b) => {
-      b.onclick = () => {
-        const h = hallados[b.dataset.k];
-        cerrarHoja();
-        activarVista("buscar");
-        mapa.setView(h.pos, 19);
-        L.circleMarker(h.pos, { radius: 16, color: "#7b1fa2", weight: 3, fillOpacity: 0.12 })
-          .bindTooltip(`Mz ${h.mz} Lt ${h.lt}`, { permanent: true, direction: "top" }).addTo(mapa);
-      };
-    });
-  }
-
-  HOJAS.direccion = hojaDireccion;
 })();

@@ -3,8 +3,9 @@
 // Solo la pueden usar usuarios con sesión, no bloqueados y con lecturas disponibles hoy. Las fotos no se guardan.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const MODELO = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
-const MODELO_RESPALDO = Deno.env.get("GEMINI_MODEL_RESPALDO") ?? "gemini-3.8-flash";
+// en orden: si uno está saturado (503) se pasa al siguiente
+const MODELOS = (Deno.env.get("GEMINI_MODELOS") ?? "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemini-3.8-flash")
+  .split(",").map((m) => m.trim()).filter(Boolean);
 const LIMITE_DIARIO = Number(Deno.env.get("JORNADA_LIMITE_DIARIO") ?? 20);
 const MAX_FOTOS = 4;
 const MAX_BYTES_FOTO = 4_000_000; // en base64
@@ -22,8 +23,14 @@ Es una tabla. La foto puede estar girada, inclinada, con sombra o con la hoja do
 Columnas habituales: MES o item, RT, OT (8 dígitos, empieza con 26), CONTRATO, ZONA, LIBRO, SED, NIM (6 o 7 dígitos),
 NOMBRE, DIRECCION, LECTURA, FECHA PAGO o TIPO. El título dice "cortes ..." o "reconexiones ...".
 
+Orden de las columnas en cada fila (de izquierda a derecha leyendo la hoja derecha):
+  MES/RT (ej. R2, C2) | OT (8 dígitos, ej. 26110415) | CONTRATO | ZONA (1 o 2 dígitos) | LIBRO (1 o 2 dígitos) |
+  SED (3 o 4 dígitos) | NIM (6 o 7 dígitos) | NOMBRE | DIRECCION | ...
+Ejemplo de fila: "R2  26110415  442724  2  15  4965  848749  APELLIDO NOMBRE  ZN CHALLAPAMPA ..." -> contrato = 442724.
+El CONTRATO es SIEMPRE el número que va justo después del OT de 8 dígitos. Normalmente tiene de 3 a 6 dígitos.
+
 Tu tarea:
-- Copia el número de la columna CONTRATO de cada fila (1 a 7 dígitos). NO copies el OT, el NIM, la SED ni otra columna.
+- Copia el número de la columna CONTRATO de cada fila. NO copies el OT, la ZONA, el LIBRO, la SED, el NIM ni otra columna.
 - Copia también la DIRECCION de esa fila, tal como está (sin el nombre de la persona).
 - Si en algún dígito del contrato dudas, igual escribe tu mejor lectura y pon seguro=false.
 - Si una fila está cortada en el borde y no se ve el contrato completo, no la incluyas.
@@ -85,9 +92,9 @@ async function gemini(modelo: string, fotos: Foto[], variante: string, temperatu
   return JSON.parse(texto);
 }
 
-/** Intenta con el modelo principal (2 veces si está saturado) y después con el de respaldo. */
+/** Prueba los modelos en orden (y una vuelta más si todos estaban saturados). */
 async function leer(fotos: Foto[], variante: string, temperatura: number) {
-  const intentos = [MODELO, MODELO, MODELO_RESPALDO];
+  const intentos = [...MODELOS, ...MODELOS.slice(0, 2)];
   let ultimo: unknown;
   for (let i = 0; i < intentos.length; i++) {
     try {
@@ -96,7 +103,7 @@ async function leer(fotos: Foto[], variante: string, temperatura: number) {
       ultimo = e;
       const estado = (e as { estado?: number }).estado;
       if (estado && ![429, 500, 502, 503, 504].includes(estado)) break; // error de la petición: no sirve reintentar
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 800));
     }
   }
   throw ultimo;

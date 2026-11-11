@@ -18,12 +18,40 @@
 
   let lectura = null; // {tipo, origen: "foto" | "pdf", filas: [{n, direccion, seguro, coincide, original, marcado}]}
 
-  // ---------- Botones de entrada ----------
-  const entrada = document.createElement("input");
-  Object.assign(entrada, { type: "file", accept: "image/*,application/pdf", multiple: true, hidden: true, id: "archivo-jornada" });
-  document.body.appendChild(entrada);
-  const elegir = () => { entrada.value = ""; entrada.click(); };
-  entrada.onchange = () => { if (entrada.files.length) procesar([...entrada.files]); };
+  // ---------- Botones de entrada: cámara, galería o archivo ----------
+  function crearEntrada(id, accept, extra = {}) {
+    const e = document.createElement("input");
+    Object.assign(e, { type: "file", accept, hidden: true, id, ...extra });
+    e.onchange = () => { if (e.files.length) procesar([...e.files]); };
+    document.body.appendChild(e);
+    return e;
+  }
+  const entradas = {
+    camara: crearEntrada("jornada-camara", "image/*"),
+    galeria: crearEntrada("jornada-galeria", "image/*", { multiple: true }),
+    archivo: crearEntrada("archivo-jornada", "application/pdf,image/*", { multiple: true }),
+  };
+  entradas.camara.setAttribute("capture", "environment"); // abre directo la cámara de atrás
+  const abrir = (tipo) => { entradas[tipo].value = ""; entradas[tipo].click(); };
+
+  function elegir() {
+    cerrarMenu();
+    abrirHoja("Subir jornada", `
+      <p class="nota jr-intro">Sube tu hoja de trabajo de cortes o reconexiones y la app arma tu ruta.</p>
+      <div class="jr-opciones">
+        <button class="jr-opcion" data-tipo="camara"><span class="jr-icono">📷</span>
+          <span><b>Tomar foto con la cámara</b><br><span class="nota">Toma la foto de la hoja de trabajo ahora</span></span></button>
+        <button class="jr-opcion" data-tipo="galeria"><span class="jr-icono">🖼️</span>
+          <span><b>Elegir foto de la galería</b><br><span class="nota">Una foto que ya tomaste o te mandaron por WhatsApp (puedes elegir varias)</span></span></button>
+        <button class="jr-opcion" data-tipo="archivo"><span class="jr-icono">📄</span>
+          <span><b>Subir archivo</b><br><span class="nota">El PDF de la hoja, si la oficina lo mandó (se lee sin errores)</span></span></button>
+      </div>
+      <ul class="nota jr-consejos">
+        <li>Pon la hoja plana, con buena luz y sin sol directo.</li>
+        <li>Que se vea toda la columna CONTRATO.</li>
+      </ul>`);
+    document.querySelectorAll(".jr-opcion").forEach((b) => { b.onclick = () => abrir(b.dataset.tipo); });
+  }
 
   HOJAS.jornada = elegir;
   HOJAS["deshacer-jornada"] = deshacer;
@@ -211,7 +239,7 @@
       <div class="jr-botones">
         <button class="btn primario" id="jr-crear" ${listos.length ? "" : "disabled"}>Crear ruta con ${listos.length}</button>
         ${ruta.length ? `<button class="btn" id="jr-agregar" ${listos.length ? "" : "disabled"}>Agregar ${listos.length} a mi ruta actual</button>` : ""}
-        <button class="btn" id="jr-otra">📷 Subir otra foto</button>
+        <button class="btn" id="jr-otra">📷 Subir otra hoja</button>
       </div>
       ${ruta.length ? `<p class="nota">"Crear ruta" reemplaza tu ruta actual de ${plural(ruta.length, "suministro")}. Podrás deshacerlo.</p>` : ""}
       ${lectura.quedan !== undefined ? `<p class="nota">Te quedan ${lectura.quedan} lecturas de foto hoy.</p>` : ""}`);
@@ -305,7 +333,7 @@
           <li>Que se vea toda la columna CONTRATO, de arriba a abajo.</li>
           <li>Sostén el celular firme o apóyalo para que no salga movida.</li>
         </ul>
-        <button class="btn primario" id="jr-reintentar">📷 Subir otra foto</button>
+        <button class="btn primario" id="jr-reintentar">📷 Subir otra vez</button>
       </div>`);
     $("#jr-reintentar").onclick = elegir;
   }
