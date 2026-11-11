@@ -8,6 +8,7 @@ const CLAVE_PARTIDA = "partida";       // "gps" o numero de suministro
 const CLAVE_DESTINO = "destino";       // "" (libre) o numero de suministro
 const CLAVE_INICIO = "inicio-ruta";    // {lat, lng} desde donde se calculo la ruta
 const CLAVE_FONDO = "fondo-mapa";
+const CLAVE_TIPOS = "tipos-ruta";      // {numero: "corte" | "reconexion"} de la hoja de la jornada
 const PENALIDAD_RECTA = 1.4;           // sin calle en el plano: se estima la recta * 1.4
 const VELOCIDAD_MOTO_MS = 20 / 3.6;    // velocidad media en moto dentro de la zona (20 km/h)
 
@@ -18,6 +19,7 @@ let ruta = leer(CLAVE_RUTA, []);            // numeros en orden de visita
 let visitados = new Set(leer(CLAVE_VISITADOS, []));
 let miPosicion = null;       // {lat, lng}
 let inicioRuta = leer(CLAVE_INICIO, null);
+let tiposRuta = leer(CLAVE_TIPOS, {});
 let seleccionActual = null;  // suministro abierto en la vista Buscar
 let versionPintado = 0;     // descarta respuestas de OSRM de un trazado anterior
 let grafo = null;           // red de calles del plano: {n: [{lat,lng}], ady: [[[vecino, metros]]]}
@@ -63,7 +65,7 @@ mapa.options.maxZoom = 20;
 const fondoGuardado = leer(CLAVE_FONDO, "Mapa + calles del plano");
 (fondos[fondoGuardado] ?? fondos["Mapa + calles del plano"]).addTo(mapa);
 capaManzanas.addTo(mapa);
-L.control.layers(fondos, { "Manzanas del plano": capaManzanas, "Red eléctrica (BT)": capaRedBT },
+const controlCapas = L.control.layers(fondos, { "Manzanas del plano": capaManzanas, "Red eléctrica (BT)": capaRedBT },
   { position: "topright" }).addTo(mapa);
 mapa.on("baselayerchange", (e) => guardar(CLAVE_FONDO, e.name));
 
@@ -416,6 +418,7 @@ function seleccionar(n) {
         : `<dt>Página</dt><dd>${s.p}</dd>
            <dt>Poste cercano</dt><dd id="f-poste">${s.poste !== undefined ? s.poste ?? "—" : "…"}</dd>`}
       <dt>GPS</dt><dd>${s.lat}, ${s.lng}</dd>
+      <dt>Mz y lote (aprox.)</dt><dd id="f-direccion" class="gris">Buscando en el catastro…</dd>
       ${s.corregido ? `<dt>Ubicación</dt><dd>Corregida${s.corregido.por ? " por " + escapar(s.corregido.por) : ""}${s.corregido.fecha ? " el " + new Date(s.corregido.fecha).toLocaleDateString("es-PE") : ""} (en el plano: ${s.latPlano}, ${s.lngPlano})</dd>
            ${s.corregido.nota ? `<dt>Referencia</dt><dd>${escapar(s.corregido.nota)}</dd>` : ""}` : ""}
     </dl>
@@ -429,6 +432,14 @@ function seleccionar(n) {
     </div>`;
   if (!propio) $("#f-plano").onclick = () => abrirPlano(s);
   $("#f-corregir").onclick = () => hojaCorregir(s.n);
+  // manzana y lote del catastro de COFOPRI (catastro.js), si hay un lote a pocos metros
+  (window.direccionCercana?.(s.lat, s.lng) ?? Promise.resolve(null)).then((d) => {
+    const dd = $("#f-direccion");
+    if (seleccionActual !== s.n || !dd) return;
+    dd.classList.remove("gris");
+    dd.textContent = d ? [d.mz && `Mz ${d.mz}`, d.lt && `Lt ${d.lt}`].filter(Boolean).join(" ") + (d.pueblo ? ` · ${d.pueblo}` : "") +
+      " · lote más cercano según COFOPRI" : "Sin datos en el catastro de COFOPRI";
+  });
   trazarCamino(s);
   if (!propio && s.poste === undefined) {
     cargarZona(zonaDe(s)).then(() => {
@@ -897,12 +908,13 @@ function pintarRuta() {
     const s = indice.get(n);
     const hecho = visitados.has(n);
     const esDestino = i === ruta.length - 1;
+    const tipo = tiposRuta[n] ?? "";
     const li = document.createElement("li");
     li.className = hecho ? "visitado" : "";
     li.innerHTML = `<span class="orden">${i + 1}</span>
       <span class="punto ${s.c}"></span>
       <span class="num">${s.n}</span>
-      <span class="info">pág. ${s.p}${esDestino ? " · destino" : ""}</span>
+      <span class="info">${tipo ? `<span class="etiqueta-tipo ${tipo}">${tipo === "corte" ? "Corte" : "Reconexión"}</span> ` : ""}pág. ${s.p}${esDestino ? " · destino" : ""}</span>
       <a class="btn" href="${urlIr(s)}" target="_blank" rel="noopener">Ir</a>
       <input type="checkbox" ${hecho ? "checked" : ""} aria-label="Visitado">`;
     li.querySelector(".num").onclick = () => { activarVista("buscar"); $("#buscador").value = s.n; seleccionar(s.n); };
@@ -916,7 +928,7 @@ function pintarRuta() {
     L.marker([s.lat, s.lng], {
       icon: L.divIcon({
         className: "",
-        html: `<div class="marcador-ruta ${hecho ? "visitado" : ""} ${esDestino ? "destino" : ""}">${i + 1}</div>`,
+        html: `<div class="marcador-ruta ${hecho ? "visitado" : ""} ${esDestino ? "destino" : ""} ${tipo}">${i + 1}</div>`,
         iconSize: esDestino ? [22, 22] : [18, 18],
       }),
       zIndexOffset: esDestino ? 900 : 0,

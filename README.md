@@ -46,6 +46,25 @@ el mapa). La corrección vale para todos los usuarios:
 - Fuera del plano: calles de OpenStreetMap vía OSRM (servicio público gratuito).
 - Orden de visita: vecino más cercano + 2-opt, calculado en el celular.
 
+## Subir la jornada (foto o PDF de la hoja)
+- `docs/jornada.js`: el trabajador elige una o varias fotos (cámara o galería) o el PDF de la hoja de cortes o reconexiones.
+- Foto: primero se revisa en el celular (tamaño, luz y nitidez = varianza del laplaciano; la hoja real nítida da ~1760,
+  ilegible < 110). Si está bien se achica a 2000 px y la lee la Edge Function `supabase/functions/leer-jornada`
+  (Gemini, dos lecturas por separado). La clave `GEMINI_API_KEY` es un secreto de Supabase, nunca va al celular.
+  Límite: 20 lecturas por persona al día (tabla `lecturas_jornada`). Las fotos no se guardan.
+- PDF: se lee en el celular con pdf.js (`docs/lib/pdfjs`), sin IA: cada fila es OT (8 dígitos) seguido del CONTRATO.
+- Antes de crear la ruta se revisa la lista: no está en el mapa, muy lejos de los demás (> 1,5 km del más cercano),
+  leído distinto en las dos lecturas o con dudas. Se puede corregir el número. "Deshacer" vuelve a la ruta anterior.
+
+## Manzanas, lotes y calles (COFOPRI)
+- `extraer/catastro.py` descarga del Geo Llaqta de COFOPRI (datos públicos) las capas de Formalización (pueblos:
+  Mz y Lt) y del Catastro Urbano (Mz/Lt municipales, vías, habilitaciones) y genera `docs/data/catastro/*.json` por
+  zonas de ~1 km más `info.json` (pueblos para buscar). Nunca se descarga el dueño del lote.
+- `docs/catastro.js`: capa "Mz, lotes y calles (COFOPRI)", búsqueda "Buscar por Mz y lote" y la Mz/Lt aproximada
+  en la ficha de cada suministro. Cubre ~56 % de los suministros; los nombres de COFOPRI pueden no coincidir con los
+  de la hoja (por ejemplo "PJV Túpac Amaru" frente a "Urb. Túpac Amaru").
+- Regenerar: `python extraer/catastro.py` y subir `CACHE_CATASTRO` en `docs/sw.js`.
+
 ## Estructura
 - `extraer/extraer.py`: genera `docs/data/indice.json` (para buscar), `docs/data/zonas/*.json` (detalle por zonas
   de ~1 km: calles, red y postes) y las imágenes `docs/data/planos/pNNN.jpg`

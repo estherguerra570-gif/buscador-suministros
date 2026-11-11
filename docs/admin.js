@@ -50,8 +50,12 @@ const ACCIONES = {
   agregar: (d) => `agregó el suministro nuevo <b>${escapar(d)}</b>`,
   corregir: (d) => `corrigió la ubicación del <b>${escapar(d)}</b>`,
   restaurar: (d) => `volvió el <b>${escapar(d)}</b> a la ubicación del plano`,
+  jornada: (d) => `subió su jornada (${escapar(d)})`,
+  foto_borrosa: (d) => `subió una foto que no se pudo leer${d ? `: ${escapar(d)}` : ""}`,
+  deshacer_jornada: () => "deshizo la ruta creada con la jornada",
 };
-const ICONOS = { entrar: "🔓", buscar: "🔍", ruta: "🛵", plano: "🗺️", recorrido: "▶", agregar: "＋", corregir: "📌", restaurar: "↩︎" };
+const ICONOS = { entrar: "🔓", buscar: "🔍", ruta: "🛵", plano: "🗺️", recorrido: "▶", agregar: "＋", corregir: "📌", restaurar: "↩︎",
+  jornada: "📷", foto_borrosa: "⚠️", deshacer_jornada: "↩︎" };
 
 let yo = null;
 let datos = null; // {perfiles, tramos, actividad, historial, correcciones, intentos}
@@ -330,6 +334,8 @@ function pintarUso() {
         ${cuadro(acc("buscar"), "Búsquedas")}
         ${cuadro(acc("ruta"), "Rutas creadas")}
         ${cuadro(acc("corregir"), "Correcciones")}
+        ${cuadro(acc("jornada"), "Jornadas subidas")}
+        ${cuadro(acc("foto_borrosa"), "Fotos que no se leyeron")}
       </div>
       <h4>Quién la usó</h4>
       ${ranking.length ? `<ul class="lista">${ranking.map(([id, u]) => `
