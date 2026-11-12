@@ -74,6 +74,13 @@
     if (res.length === 1) abrir(res[0].n);
   };
 
+  // la SED se marca con un triángulo negro, como en el plano (el suministro lleva la burbuja de siempre)
+  const TRIANGULO = L.divIcon({
+    className: "", iconSize: [30, 26], iconAnchor: [15, 17],
+    html: `<svg class="marca-sed" viewBox="0 0 30 26" width="30" height="26" aria-hidden="true">
+      <polygon points="15,2 28,24 2,24" fill="#000" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>`,
+  });
+
   function abrir(n) {
     const s = porNumero.get(n);
     if (!s) return;
@@ -81,8 +88,8 @@
     $("#buscador").value = n;
     $("#resultados").innerHTML = "";
     if (marcadorSeleccion) marcadorSeleccion.remove();
-    marcadorSeleccion = L.marker([s.lat, s.lng]).addTo(mapa)
-      .bindTooltip(`SED ${s.n}`, { permanent: true, direction: "top", offset: [-15, -12] });
+    marcadorSeleccion = L.marker([s.lat, s.lng], { icon: TRIANGULO }).addTo(mapa)
+      .bindTooltip(`SED ${s.n}`, { permanent: true, direction: "top", offset: [0, -16] });
     plegarPanel(true, `SED ${s.n}`);
     mapa.setView([s.lat, s.lng], 18);
     anotar("buscar", `SED ${s.n}`);
