@@ -73,6 +73,9 @@ select { width: auto; font-size: 15px; padding: 8px; }
 .buscar-fila { display: flex; gap: 8px; margin: 0; }
 .buscar-fila input { flex: 1; min-width: 0; }
 .buscar-fila .btn { font-size: 16px; padding: 0 18px; }
+.buscar-fila .btn-voz { padding: 0 12px; font-size: 20px; }
+.btn-voz.oyendo { background: #c62828; border-color: #c62828; animation: voz-latir 1s ease-in-out infinite; }
+@keyframes voz-latir { 50% { box-shadow: 0 0 0 6px rgba(198,40,40,.25); } }
 .recorrido { margin: 8px 0 0; font-size: 15px; font-weight: 600; color: #1a73e8; }
 .recorrido.gris { color: var(--suave); font-weight: 400; font-size: 13px; }
 .fila { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
