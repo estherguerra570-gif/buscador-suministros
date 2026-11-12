@@ -20,8 +20,7 @@
     for (const s of lista) porNumero.set(s.n, s);
     dibujar();
     return lista;
-  }).catch(() => { cargar.p = null; return null; }));
-  cargar();
+  }).catch(() => { cargar.p = null; return null; }));   // se baja recién al usarla (buscar, ficha o capa)
 
   // ---------- Buscar SED: desde el menú (☰ > Buscar SED); el buscador pasa a buscar SED ----------
   window.modoSed = () => modo === "sed";
@@ -118,8 +117,7 @@
 
   // ---------- Capa del mapa: triángulos con el número de cada SED ----------
   const capa = L.layerGroup();
-  controlCapas.addOverlay(capa, "SED (subestaciones)");
-  capa.addTo(mapa);
+  controlCapas.addOverlay(capa, "SED (subestaciones)"); // apagada al iniciar: se prende desde las capas
   const marcas = new Map();
   function dibujar() {
     if (!lista || !mapa.hasLayer(capa)) return;
@@ -138,7 +136,7 @@
       if (!capa.hasLayer(m)) capa.addLayer(m);
     }
   }
-  mapa.on("moveend overlayadd", dibujar);
+  mapa.on("moveend overlayadd", () => { if (lista) dibujar(); else if (mapa.hasLayer(capa)) cargar(); });
 
   // ---------- SED más cercana a un punto (ficha del suministro) ----------
   window.sedCercana = async (lat, lng) => {

@@ -7,7 +7,6 @@ const CLAVE_VISITADOS = "visitados";
 const CLAVE_PARTIDA = "partida";       // "gps" o numero de suministro
 const CLAVE_DESTINO = "destino";       // "" (libre) o numero de suministro
 const CLAVE_INICIO = "inicio-ruta";    // {lat, lng} desde donde se calculo la ruta
-const CLAVE_FONDO = "fondo-mapa";
 const CLAVE_TIPOS = "tipos-ruta";      // {numero: "corte" | "reconexion"} de la hoja de la jornada
 const PENALIDAD_RECTA = 1.4;           // sin calle en el plano: se estima la recta * 1.4
 const VELOCIDAD_MOTO_MS = 20 / 3.6;    // velocidad media en moto dentro de la zona (20 km/h)
@@ -62,12 +61,11 @@ const fondos = {
 const capaManzanas = L.layerGroup();
 const capaRedBT = L.layerGroup();
 mapa.options.maxZoom = 20;
-const fondoGuardado = leer(CLAVE_FONDO, "Mapa + calles del plano");
-(fondos[fondoGuardado] ?? fondos["Mapa + calles del plano"]).addTo(mapa);
+// al iniciar siempre: mapa + calles del plano y manzanas del plano (lo demás se prende desde las capas)
+fondos["Mapa + calles del plano"].addTo(mapa);
 capaManzanas.addTo(mapa);
 const controlCapas = L.control.layers(fondos, { "Manzanas del plano": capaManzanas, "Red eléctrica (BT)": capaRedBT },
   { position: "topright" }).addTo(mapa);
-mapa.on("baselayerchange", (e) => guardar(CLAVE_FONDO, e.name));
 
 const capaRuta = L.layerGroup().addTo(mapa);
 const capaCamino = L.layerGroup().addTo(mapa); // recorrido hasta el suministro buscado

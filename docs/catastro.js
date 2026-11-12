@@ -14,8 +14,7 @@
   const zonas = new Map();       // clave -> Promise<zona | null>
   const capa = L.layerGroup();
   const capas = new Map();       // `${tipo}:${zona}` -> L.LayerGroup
-  controlCapas.addOverlay(capa, "Mz, lotes y calles (COFOPRI)");
-  capa.addTo(mapa);
+  controlCapas.addOverlay(capa, "Mz, lotes y calles (COFOPRI)"); // apagada al iniciar: se prende desde las capas
 
   const cargarInfo = () => (info ??= fetch("data/catastro/info.json").then((r) => r.json()).catch(() => { info = null; return null; }));
 
