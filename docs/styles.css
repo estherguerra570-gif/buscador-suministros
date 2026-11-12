@@ -380,8 +380,3 @@ summary { font-weight: 600; padding: 6px 0; cursor: pointer; }
 }
 .modo-sed[hidden] { display: none; }
 .tri-sed { color: #111; font-size: 0.9em; margin-right: 6px; }
-.marca-sed {
-  display: inline-flex; align-items: center; gap: 2px; transform: translate(-8px, -50%); white-space: nowrap;
-  font: 700 12px/1 Arial, sans-serif; color: #111; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
-}
-.marca-sed .tri-sed { font-size: 15px; margin: 0; }

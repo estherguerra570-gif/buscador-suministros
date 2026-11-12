@@ -72,7 +72,7 @@ el mapa). La corrección vale para todos los usuarios:
   "RELACION SED MODULAR BT.xlsx" (columna B = SED; también trae dirección y modular). Ubica 4551 de 4562.
   Las que tocan el borde de una hoja solo se usan si no aparecen enteras en otra. Genera `docs/data/sed.json`.
 - `docs/sed.js`: menú ☰ > "Buscar SED" pone el buscador a buscar SED (con "Volver a suministros"); la ficha de la SED (kVA, dirección, modular, ver en el plano,
-  recorrido); capa "SED (subestaciones)" en el mapa; y en la ficha de cada suministro "SED cercana" (la más cercana a
+  recorrido); y en la ficha de cada suministro "SED cercana" (la más cercana a
   menos de 600 m, por distancia: no es la red eléctrica).
 - Regenerar: `python extraer/sed.py "...MODULAR BT + SUMINISTROS AREQUIPA.pdf" "...RELACION SED MODULAR BT.xlsx"`.
 

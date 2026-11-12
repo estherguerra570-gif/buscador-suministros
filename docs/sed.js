@@ -1,11 +1,9 @@
 "use strict";
-// Subestaciones (SED) del plano: buscar por número, verlas en el mapa y la SED más cercana de cada suministro.
+// Subestaciones (SED) del plano: buscar por número (☰ > Buscar SED) y la SED más cercana de cada suministro.
 // Datos en data/sed.json (generado con extraer/sed.py desde el plano y la "RELACION SED MODULAR BT").
-// Usa las globales de app.js (mapa, controlCapas, $, seleccionActual, marcadorSeleccion, trazarCamino, ...).
+// Usa las globales de app.js (mapa, $, seleccionActual, marcadorSeleccion, trazarCamino, ...).
 
 (() => {
-  const ZOOM_CAPA = 15.5;        // de más lejos los triángulos se amontonan
-  const MAX_EN_PANTALLA = 400;
   const SED_LEJOS_M = 600;       // más lejos que esto no se muestra como "SED cercana"
 
   let modo = "suministro";       // qué busca el buscador: "suministro" o "sed"
@@ -18,9 +16,8 @@
       kva: j.kva[i], p: j.p[i], px: j.px[i], py: j.py[i], d: j.d[i], m: j.m[i],
     }));
     for (const s of lista) porNumero.set(s.n, s);
-    dibujar();
     return lista;
-  }).catch(() => { cargar.p = null; return null; }));   // se baja recién al usarla (buscar, ficha o capa)
+  }).catch(() => { cargar.p = null; return null; }));   // se baja recién al usarla (buscar o ficha)
 
   // ---------- Buscar SED: desde el menú (☰ > Buscar SED); el buscador pasa a buscar SED ----------
   window.modoSed = () => modo === "sed";
@@ -77,11 +74,6 @@
     if (res.length === 1) abrir(res[0].n);
   };
 
-  const icono = (n) => L.divIcon({
-    className: "", iconSize: null,
-    html: `<div class="marca-sed"><span class="tri-sed">▲</span><b>${escapar(n)}</b></div>`,
-  });
-
   function abrir(n) {
     const s = porNumero.get(n);
     if (!s) return;
@@ -114,29 +106,6 @@
     $("#f-plano").onclick = () => abrirPlano(s);
     trazarCamino(s);
   }
-
-  // ---------- Capa del mapa: triángulos con el número de cada SED ----------
-  const capa = L.layerGroup();
-  controlCapas.addOverlay(capa, "SED (subestaciones)"); // apagada al iniciar: se prende desde las capas
-  const marcas = new Map();
-  function dibujar() {
-    if (!lista || !mapa.hasLayer(capa)) return;
-    if (mapa.getZoom() < ZOOM_CAPA) return capa.clearLayers();
-    const b = mapa.getBounds().pad(0.2);
-    const visibles = lista.filter((s) => b.contains([s.lat, s.lng]));
-    if (visibles.length > MAX_EN_PANTALLA) return capa.clearLayers();
-    const quedan = new Set(visibles.map((s) => s.n));
-    capa.eachLayer((m) => { if (!quedan.has(m.options.sed)) capa.removeLayer(m); });
-    for (const s of visibles) {
-      if (!marcas.has(s.n)) {
-        marcas.set(s.n, L.marker([s.lat, s.lng], { icon: icono(s.n), sed: s.n, keyboard: false })
-          .on("click", () => { activarVista("buscar"); ponerModo("sed"); abrir(s.n); }));
-      }
-      const m = marcas.get(s.n);
-      if (!capa.hasLayer(m)) capa.addLayer(m);
-    }
-  }
-  mapa.on("moveend overlayadd", () => { if (lista) dibujar(); else if (mapa.hasLayer(capa)) cargar(); });
 
   // ---------- SED más cercana a un punto (ficha del suministro) ----------
   window.sedCercana = async (lat, lng) => {
