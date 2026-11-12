@@ -1,11 +1,12 @@
 // Guarda la app y los datos en el celular para que la búsqueda funcione sin señal.
 // Subir VERSION cada vez que cambie el código. Subir CACHE_DATOS solo cuando se regeneren los datos del PDF
 // (así una actualización del código no obliga a bajar de nuevo los 4 MB del índice).
-const VERSION = "v24";
+const VERSION = "v29";
 const CACHE_DATOS = "datos-2026-10-28"; // índice y zonas: se usan desde el celular, sin esperar a internet
 const CACHE_PLANOS = "planos-v1"; // imágenes de páginas del plano: se guardan a medida que se abren
+const CACHE_CATASTRO = "catastro-2026-11-11"; // manzanas y lotes de COFOPRI: subir al regenerarlos
 const ARCHIVOS = [
-  "./", "index.html", "styles.css", "app.js", "menu.js", "gestos.js", "sesion.js", "lib/supabase.js", "manifest.json",
+  "./", "index.html", "styles.css", "app.js", "menu.js", "gestos.js", "sesion.js", "catastro.js", "jornada.js", "sed.js", "lib/supabase.js", "manifest.json",
   "lib/leaflet.js", "lib/leaflet-rotate.js", "lib/leaflet.css",
   "icono-192.png", "icono-512.png",
 ];
@@ -26,7 +27,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((claves) => Promise.all(claves.filter((k) => ![VERSION, CACHE_DATOS, CACHE_PLANOS].includes(k)).map((k) => caches.delete(k))))
+      .then((claves) => Promise.all(claves.filter((k) => ![VERSION, CACHE_DATOS, CACHE_PLANOS, CACHE_CATASTRO].includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -38,7 +39,7 @@ self.addEventListener("fetch", (e) => {
   // Datos del PDF y planos (casi no cambian): primero lo guardado; si no está, se descarga y se guarda.
   if (url.pathname.includes("/data/")) {
     e.respondWith(
-      caches.open(url.pathname.includes("/data/planos/") ? CACHE_PLANOS : CACHE_DATOS).then(async (c) => {
+      caches.open(url.pathname.includes("/data/planos/") ? CACHE_PLANOS : url.pathname.includes("/data/catastro/") ? CACHE_CATASTRO : CACHE_DATOS).then(async (c) => {
         const guardado = await c.match(e.request);
         if (guardado) return guardado;
         const r = await fetch(e.request);

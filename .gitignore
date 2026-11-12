@@ -4,3 +4,4 @@ __pycache__/
 
 supabase/.env
 supabase/.temp/
+supabase/funciones.env

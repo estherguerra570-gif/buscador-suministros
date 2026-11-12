@@ -13,7 +13,7 @@ interpolación entre esas esquinas.
 Leyenda usada para filtrar:
 - Suministro: número verde (`#267300`) o anaranjado (`#a87000`)
 - Poste: número rojo (`#a83800`)
-- Subestación: triángulo (se ignora)
+- Subestación (SED): triángulo con dos números negros en negrita: la SED arriba y los kVA abajo (`extraer/sed.py`)
 
 Se toman números de 1 a 6 cifras.
 
@@ -45,6 +45,36 @@ el mapa). La corrección vale para todos los usuarios:
   por las calles); los tramos sueltos se unen solo si no atraviesan una manzana (`extraer/red.py`).
 - Fuera del plano: calles de OpenStreetMap vía OSRM (servicio público gratuito).
 - Orden de visita: vecino más cercano + 2-opt, calculado en el celular.
+
+## Subir la jornada (foto o PDF de la hoja)
+- `docs/jornada.js`: el trabajador elige cómo subir la hoja de cortes o reconexiones: tomar foto con la cámara,
+  elegir fotos de la galería o subir el archivo (PDF).
+- Foto: primero se revisa en el celular (tamaño, luz y nitidez = varianza del laplaciano; la hoja real nítida da ~1760,
+  ilegible < 110). Si está bien se achica a 2000 px y la lee la Edge Function `supabase/functions/leer-jornada`
+  (Gemini, dos lecturas por separado; si un modelo está saturado pasa al siguiente: `GEMINI_MODELOS`). La clave `GEMINI_API_KEY` es un secreto de Supabase, nunca va al celular.
+  Límite: 20 lecturas por persona al día (tabla `lecturas_jornada`). Las fotos no se guardan.
+- En prueba: el botón solo aparece para la administradora y los correos cuya huella SHA-256 está en `PROBADORES` (`docs/jornada.js`);
+  la Edge Function solo acepta los correos del secreto `JORNADA_PERMITIDOS` (vacío = todos).
+- PDF: se lee en el celular con pdf.js (`docs/lib/pdfjs`), sin IA: cada fila es OT (8 dígitos) seguido del CONTRATO.
+- Antes de crear la ruta se revisa la lista: no está en el mapa, muy lejos de los demás (> 1,5 km del más cercano),
+  leído distinto en las dos lecturas o con dudas. Se puede corregir el número. "Deshacer" vuelve a la ruta anterior.
+
+## Manzanas, lotes y calles (COFOPRI)
+- `extraer/catastro.py` descarga del Geo Llaqta de COFOPRI (datos públicos) las capas de Formalización (pueblos:
+  Mz y Lt) y del Catastro Urbano (Mz/Lt municipales, vías, habilitaciones) y genera `docs/data/catastro/*.json` por
+  zonas de ~1 km más `info.json`. Nunca se descarga el dueño del lote.
+- `docs/catastro.js`: capa "Mz, lotes y calles (COFOPRI)" y la Mz/Lt aproximada en la ficha de cada suministro. Cubre ~56 % de los suministros; los nombres de COFOPRI pueden no coincidir con los
+  de la hoja (por ejemplo "PJV Túpac Amaru" frente a "Urb. Túpac Amaru").
+- Regenerar: `python extraer/catastro.py` y subir `CACHE_CATASTRO` en `docs/sw.js`.
+
+## SED (subestaciones)
+- `extraer/sed.py` lee del plano los números negros en negrita de cada SED (con su potencia en kVA) y los cruza con la
+  "RELACION SED MODULAR BT.xlsx" (columna B = SED; también trae dirección y modular). Ubica 4551 de 4562.
+  Las que tocan el borde de una hoja solo se usan si no aparecen enteras en otra. Genera `docs/data/sed.json`.
+- `docs/sed.js`: menú ☰ > "Buscar SED" pone el buscador a buscar SED (con "Volver a suministros"); la ficha de la SED (kVA, dirección, modular, ver en el plano,
+  recorrido); capa "SED (subestaciones)" en el mapa; y en la ficha de cada suministro "SED cercana" (la más cercana a
+  menos de 600 m, por distancia: no es la red eléctrica).
+- Regenerar: `python extraer/sed.py "...MODULAR BT + SUMINISTROS AREQUIPA.pdf" "...RELACION SED MODULAR BT.xlsx"`.
 
 ## Estructura
 - `extraer/extraer.py`: genera `docs/data/indice.json` (para buscar), `docs/data/zonas/*.json` (detalle por zonas

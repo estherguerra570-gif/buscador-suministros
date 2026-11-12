@@ -34,6 +34,10 @@
       </button>
       <!-- Vista: buscar -->
       <div class="vista" data-vista="buscar">
+        <div id="modo-sed" class="modo-sed" hidden>
+          <strong>▲ Buscando SED</strong>
+          <button type="button" id="salir-sed" class="btn chico">✕ Volver a suministros</button>
+        </div>
         <form id="form-buscar" class="buscar-fila">
           <input id="buscador" type="search" inputmode="numeric" enterkeyhint="search" autocomplete="off"
                  placeholder="Número de suministro…" aria-label="Número de suministro">
@@ -56,6 +60,7 @@
           <button type="submit" class="btn primario">+ Agregar a la ruta</button>
         </form>
         <p id="no-encontrados" class="nota alerta" hidden></p>
+        <button id="btn-jornada" class="btn primario btn-jornada" hidden>📷 Subir foto de la jornada</button>
         <details id="cargar-lista">
           <summary>Pegar varios números a la vez</summary>
           <textarea id="lista-pegada" rows="4" inputmode="numeric"
@@ -112,12 +117,15 @@
       </div>
     </div>
     <button class="menu-item" data-hoja="usuario">👤 Usuario</button>
+    <button class="menu-item" data-hoja="buscar-sed">▲ Buscar SED</button>
     <button class="menu-item" data-hoja="historial">🕘 Búsquedas de hoy <span id="cuenta-historial" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="agregar">＋ Agregar suministro nuevo</button>
     <button class="menu-item" data-hoja="corregir">📌 Corregir ubicación <span id="cuenta-corregidos" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="mis-puntos">📍 Mis suministros agregados <span id="cuenta-propios" class="cuenta"></span></button>
     <button class="menu-item" data-hoja="admin" id="menu-admin" hidden>👥 Usuarios y actividad</button>
     <button class="menu-item" data-hoja="ruta">🛵 Crear ruta <span id="contador-ruta" class="cuenta" hidden></span></button>
+    <button class="menu-item" data-hoja="jornada" id="menu-jornada" hidden>📷 Subir foto de la jornada</button>
+    <button class="menu-item" data-hoja="deshacer-jornada" id="menu-deshacer-jornada" hidden>↩︎ Deshacer la última jornada</button>
   </aside>
 
   <!-- Hoja para el contenido de cada opción del menú -->
@@ -158,5 +166,8 @@
   <script src="sesion.js"></script>
   <script src="app.js"></script>
   <script src="menu.js"></script>
+  <script src="catastro.js"></script>
+  <script src="jornada.js"></script>
+  <script src="sed.js"></script>
 </body>
 </html>
