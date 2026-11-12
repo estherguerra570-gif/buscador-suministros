@@ -53,6 +53,8 @@ el mapa). La corrección vale para todos los usuarios:
   ilegible < 110). Si está bien se achica a 2000 px y la lee la Edge Function `supabase/functions/leer-jornada`
   (Gemini, dos lecturas por separado; si un modelo está saturado pasa al siguiente: `GEMINI_MODELOS`). La clave `GEMINI_API_KEY` es un secreto de Supabase, nunca va al celular.
   Límite: 20 lecturas por persona al día (tabla `lecturas_jornada`). Las fotos no se guardan.
+- En prueba: el botón solo aparece para la administradora y los correos cuya huella SHA-256 está en `PROBADORES` (`docs/jornada.js`);
+  la Edge Function solo acepta los correos del secreto `JORNADA_PERMITIDOS` (vacío = todos).
 - PDF: se lee en el celular con pdf.js (`docs/lib/pdfjs`), sin IA: cada fila es OT (8 dígitos) seguido del CONTRATO.
 - Antes de crear la ruta se revisa la lista: no está en el mapa, muy lejos de los demás (> 1,5 km del más cercano),
   leído distinto en las dos lecturas o con dudas. Se puede corregir el número. "Deshacer" vuelve a la ruta anterior.

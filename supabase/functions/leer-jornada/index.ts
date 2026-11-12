@@ -122,6 +122,11 @@ Deno.serve(async (req) => {
   });
   const { data: { user } } = await supa.auth.getUser();
   if (!user) return responder({ error: "Tu sesión venció. Vuelve a entrar con Google." }, 401);
+  // en prueba: solo los correos del secreto JORNADA_PERMITIDOS (separados por coma); vacío = todos
+  const permitidos = (Deno.env.get("JORNADA_PERMITIDOS") ?? "").split(",").map((c) => c.trim().toLowerCase()).filter(Boolean);
+  if (permitidos.length && !permitidos.includes((user.email ?? "").toLowerCase())) {
+    return responder({ error: "Esta función todavía está en prueba." }, 403);
+  }
   const { data: bloqueado } = await supa.rpc("esta_bloqueado");
   if (bloqueado) return responder({ error: "Esta cuenta no tiene acceso a la app." }, 403);
   const { data: cupo, error: errCupo } = await supa.rpc("jornada_cupo", { p_limite: LIMITE_DIARIO });

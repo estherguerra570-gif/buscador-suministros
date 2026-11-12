@@ -56,11 +56,30 @@
   HOJAS.jornada = elegir;
   HOJAS["deshacer-jornada"] = deshacer;
   $("#btn-jornada").onclick = elegir;
-  pintarMenuDeshacer();
+
+  // En prueba: solo la ven la administradora y las cuentas de PROBADORES (huella SHA-256 del correo, para no
+  // publicar el correo en el código). La Edge Function lo vuelve a revisar con el secreto JORNADA_PERMITIDOS.
+  const PROBADORES = new Set(["334a7be8416db6a11b7ba651523a693ee2d007132e72b973fab8cede390740d1"]);
+  let permitido = false;
+  async function revisarPermiso() {
+    const correo = (usuarioActual?.email ?? "").trim().toLowerCase();
+    let ok = !!usuarioActual?.admin;
+    if (!ok && correo && crypto.subtle) {
+      const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(correo));
+      ok = PROBADORES.has([...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join(""));
+    }
+    permitido = ok;
+    $("#btn-jornada").hidden = !ok;
+    $("#menu-jornada").hidden = !ok;
+    pintarMenuDeshacer();
+  }
+  const alEntrarAntes = window.alEntrar;
+  window.alEntrar = () => { alEntrarAntes?.(); revisarPermiso(); };
+  revisarPermiso();
 
   function pintarMenuDeshacer() {
     const b = $("#menu-deshacer-jornada");
-    if (b) b.hidden = !leer(CLAVE_DESHACER, null);
+    if (b) b.hidden = !permitido || !leer(CLAVE_DESHACER, null);
   }
 
   // ---------- Revisar la foto en el celular ----------
